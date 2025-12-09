@@ -1,0 +1,4 @@
+chromadb
+openai
+mcp>=0.9.0
+

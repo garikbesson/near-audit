@@ -1,0 +1,14 @@
+{
+  "mcpServers": {
+    "near-security-vector-store": {
+      "command": "python",
+      "args": [
+        "/Users/garikbesson/Documents/work/near/devhub/tools/python/security-vector-store/mcp_server.py"
+      ],
+      "env": {
+        "TOKENIZERS_PARALLELISM": "false"
+      }
+    }
+  }
+}
+

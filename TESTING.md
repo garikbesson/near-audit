@@ -1,13 +1,10 @@
-# Testing the MCP Server
+# Testing the Code Auditor
 
-This guide explains how to test and verify that the MCP server is working correctly and returning data from the vector store.
+This guide explains how to test and verify that the code auditor is working correctly.
 
 ## Prerequisites
 
-1. Make sure you have created the vector store:
-   ```bash
-   python create-vector.py
-   ```
+1. Make sure the `concepts/` directory exists with security documentation files
 
 2. Install dependencies (if not already installed):
    ```bash
@@ -16,191 +13,143 @@ This guide explains how to test and verify that the MCP server is working correc
 
 ## Quick Test
 
-Run the test script to verify all functionality:
+### Run All Tests
+
+To run all tests at once:
 
 ```bash
 # Activate virtual environment (if using one)
 source venv/bin/activate
 
-# Run the test suite
-python test_mcp_server.py
+# Run all tests
+python tests/run_tests.py
 ```
 
-This will test:
-- ✓ Direct ChromaDB collection access
-- ✓ Getting the collection
-- ✓ Listing available tools
-- ✓ Querying security documentation
-- ✓ Getting all concepts
-- ✓ Listing resources
-- ✓ Reading resources
-- ✓ Listing prompts
+This will run:
+- Code Audit Tests
+
+### Run Individual Tests
+
+Run a specific test script to verify functionality:
+
+```bash
+# Activate virtual environment (if using one)
+source venv/bin/activate
+
+# Run code audit tests
+python tests/test_code_audit.py
+```
 
 ## Manual Testing
 
-### 1. Test Direct Collection Access
+### 1. Test Concepts Directory
 
-You can test the ChromaDB collection directly:
-
-```python
-import chromadb
-
-client = chromadb.PersistentClient(path="./chroma/")
-collection = client.get_collection(name='concepts')
-
-# Get all documents
-all_data = collection.get()
-print(f"Total documents: {len(all_data['ids'])}")
-
-# Query the collection
-results = collection.query(query_texts=["reentrancy"], n_results=3)
-print(f"Found {len(results['documents'][0])} results")
-```
-
-### 2. Test MCP Server Functions
-
-You can test individual MCP server functions:
+You can verify that all concept files are available:
 
 ```python
-import asyncio
-from mcp_server import get_collection, list_tools, call_tool
+import os
+from glob import glob
 
-async def test():
-    # Test getting collection
-    collection = get_collection()
-    print(f"Collection: {collection.name}")
-    
-    # Test listing tools
-    tools = await list_tools()
-    print(f"Tools: {[t.name for t in tools]}")
-    
-    # Test querying
-    result = await call_tool("query_security_docs", {
-        "query": "storage attacks",
-        "n_results": 2
-    })
-    print(f"Query result: {result[0].text[:200]}...")
-
-asyncio.run(test())
+concepts_dir = "./concepts"
+md_files = glob(os.path.join(concepts_dir, "*.md"))
+print(f"Total concept files: {len(md_files)}")
+for f in md_files:
+    print(f"  - {os.path.basename(f)}")
 ```
 
-### 3. Test MCP Server via stdio (Full Integration)
+### 2. Test Code Auditor Directly
 
-To test the full MCP server integration, you can use the MCP client test script:
+You can test the CodeAuditor class directly:
+
+```python
+from auditor.auditor import CodeAuditor
+
+auditor = CodeAuditor()
+issues = auditor.audit_file("path/to/contract.rs")
+
+if issues:
+    print(f"Found {len(issues)} issues:")
+    for issue in issues:
+        print(f"Line {issue['line_number']}: {issue['issue_description']}")
+```
+
+### 3. Test CLI Tool
+
+You can test the command-line tool:
 
 ```bash
-python test_mcp_client.py
+python auditor/audit.py tests/test_contract.rs
 ```
-
-**Note**: This requires the MCP client library and may need additional setup depending on your MCP client implementation.
 
 ## Expected Results
 
-When running `test_mcp_server.py`, you should see:
+When running `tests/test_code_audit.py`, you should see:
 
 ```
 ============================================================
-MCP Server Test Suite
+Code Audit Functionality Test Suite
 ============================================================
 
-Testing direct ChromaDB collection query...
-✓ Collection contains 10 documents
-✓ Query returned 3 results
-
-Testing get_collection()...
-✓ Collection retrieved successfully
-
-Testing list_tools()...
-✓ Found 2 tools:
-  - query_security_docs: Query the NEAR Protocol security documentation...
-  - get_all_concepts: Get a list of all available security concepts...
-
-Testing query_security_docs tool...
-✓ Query successful, returned 15726 characters
-
-Testing get_all_concepts tool...
-✓ Retrieved concepts list
-  Result: Available security concepts (10 total):
-  - ./concepts/callbacks.md
-  - ./concepts/storage.md
-  ...
-
-Testing list_resources()...
-✓ Found 10 resources:
-  - near-security://concept/callbacks: callbacks
-  - near-security://concept/storage: storage
-  ...
-
-Testing read_resource()...
-✓ Successfully read resource: near-security://concept/callbacks
-  Content length: 6032 characters
-
-Testing list_prompts()...
-✓ Found 2 prompts:
-  - security_audit_checklist: Get a security audit checklist...
-  - explain_security_concept: Explain a specific NEAR security concept...
+Testing CodeAuditor directly...
+✓ Found X security issue(s)
+✓ Direct audit completed successfully!
 
 ============================================================
 Test Summary
 ============================================================
-✓ PASS: Direct Collection Query
-✓ PASS: Get Collection
-✓ PASS: List Tools
-✓ PASS: Query Security Docs
-✓ PASS: Get All Concepts
-✓ PASS: List Resources
-✓ PASS: Read Resource
-✓ PASS: List Prompts
+✓ PASS: CodeAuditor
 
-Total: 8/8 tests passed
-🎉 All tests passed! The MCP server is working correctly.
+Total: 1/1 tests passed
+🎉 All tests passed!
 ```
 
 ## Troubleshooting
 
-### Error: "Vector store not found"
-- Run `python create-vector.py` to create the vector store first
+### Error: "Concepts directory not found"
+- Make sure `concepts/` directory exists with security documentation files
 
-### Error: "ModuleNotFoundError: No module named 'mcp'"
+### Error: "ModuleNotFoundError"
 - Install dependencies: `pip install -r requirements.txt`
+- Activate virtual environment: `source venv/bin/activate`
 
-### Error: "Collection 'concepts' not found"
-- The vector store may not have been created properly
-- Delete the `./chroma/` directory and run `python create-vector.py` again
+### Error: "No concept files found"
+- Make sure `concepts/` directory contains `.md` files with security documentation
 
 ### Tests fail with import errors
 - Make sure you're running from the project root directory
 - Activate the virtual environment if you're using one: `source venv/bin/activate`
+- Tests are located in the `tests/` directory and should be run from the project root
 
 ## Verifying Data
 
-To verify that the server is actually returning data from the collection:
+To verify that the auditor is working correctly:
 
-1. Check the collection size:
+1. Check that concept files exist:
    ```python
-   collection = get_collection()
-   all_data = collection.get()
-   print(f"Documents in collection: {len(all_data['ids'])}")
+   import os
+   from glob import glob
+   
+   concepts_dir = "./concepts"
+   md_files = glob(os.path.join(concepts_dir, "*.md"))
+   print(f"Found {len(md_files)} concept files")
+   for f in md_files:
+       print(f"  - {os.path.basename(f)}")
    ```
 
-2. Test a query:
+2. Test reading a concept file:
    ```python
-   results = collection.query(query_texts=["security"], n_results=5)
-   print(f"Query returned {len(results['documents'][0])} results")
-   for i, doc in enumerate(results['documents'][0][:3]):
-       print(f"\nResult {i+1}: {doc[:200]}...")
+   with open("./concepts/reentrancy.md", 'r') as f:
+       content = f.read()
+       print(f"Reentrancy concept: {len(content)} characters")
    ```
 
-3. Verify through MCP tools:
+3. Test the auditor:
    ```python
-   result = await call_tool("get_all_concepts", {})
-   print(result[0].text)
+   from auditor.auditor import CodeAuditor
+   auditor = CodeAuditor()
+   issues = auditor.audit_file("tests/test_contract.rs")
+   print(f"Found {len(issues)} issues")
+   # Issues are grouped by concept
+   for issue in issues:
+       print(f"  - {issue.get('concept', 'unknown')}: Line {issue['line_number']}")
    ```
-
-## Next Steps
-
-Once testing is complete, you can:
-- Integrate the MCP server with Claude Desktop (see `MCP_README.md`)
-- Use the server with other MCP-compatible clients
-- Extend the server with additional tools or resources
-

@@ -70,3 +70,4 @@ impl Contract {
         *self.balances.get(&account).unwrap_or(&0)
     }
 }
+

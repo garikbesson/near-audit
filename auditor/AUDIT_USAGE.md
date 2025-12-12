@@ -9,30 +9,30 @@ This guide explains how to manually audit NEAR smart contract code from the comm
 source venv/bin/activate
 
 # Run audit on a contract file
-python audit_code.py <path_to_file>
+python auditor/audit.py <path_to_file>
 ```
 
 ## Examples
 
-### Audit a file in the current directory:
+### Audit a file in the tests directory:
 ```bash
-python audit_code.py test_contract.rs
+python auditor/audit.py tests/test_contract.rs
 ```
 
 ### Audit a file with absolute path:
 ```bash
-python audit_code.py /path/to/your/contract.rs
+python auditor/audit.py /path/to/your/contract.rs
 ```
 
 ### Audit a file with relative path:
 ```bash
-python audit_code.py ./src/lib.rs
-python audit_code.py ../contracts/my_contract.rs
+python auditor/audit.py ./src/lib.rs
+python auditor/audit.py ../contracts/my_contract.rs
 ```
 
 ### Verbose output (for debugging):
 ```bash
-python audit_code.py -v test_contract.rs
+python auditor/audit.py -v tests/test_contract.rs
 ```
 
 ## Output Format
@@ -86,7 +86,7 @@ NEAR Smart Contract Security Audit
 This allows you to use the tool in scripts:
 
 ```bash
-if python audit_code.py contract.rs; then
+if python auditor/audit.py contract.rs; then
     echo "Code is secure!"
 else
     echo "Security issues found!"
@@ -95,10 +95,9 @@ fi
 
 ## Requirements
 
-1. Vector store must be created:
-   ```bash
-   python create-vector.py
-   ```
+1. Concepts directory must exist with security documentation:
+   - `concepts/` directory with `.md` files
+   - Each file describes a security concept
 
 2. Dependencies must be installed:
    ```bash
@@ -112,8 +111,8 @@ fi
 - Use absolute path if relative path doesn't work
 - Make sure the file exists and is readable
 
-### Error: "Vector store not found"
-- Run `python create-vector.py` to create the vector store
+### Error: "Concepts directory not found"
+- Make sure `concepts/` directory exists with security documentation files
 
 ### Error: "ModuleNotFoundError"
 - Activate virtual environment: `source venv/bin/activate`
@@ -122,19 +121,7 @@ fi
 ### No issues found but you expect issues
 - The LLM might not have detected the issue
 - Try being more explicit in code comments
-- Check that the vector store contains relevant security documentation
-
-## Integration with MCP Server
-
-You can also use the audit functionality through the MCP server:
-
-```python
-from mcp_server import call_tool
-
-result = await call_tool("audit_contract_code", {
-    "file_path": "/path/to/contract.rs"
-})
-```
+- Check that all relevant concept files exist in `concepts/` directory
 
 ## What Gets Checked
 
@@ -151,5 +138,5 @@ The audit tool checks for:
 - ✅ State management issues
 - ✅ Gas allocation problems
 
-All checks are based on NEAR Protocol security best practices from the vector store documentation.
+All checks are based on NEAR Protocol security best practices from the concept documentation files in `concepts/` directory. The audit checks code against ALL security concepts, not just "relevant" ones.
 

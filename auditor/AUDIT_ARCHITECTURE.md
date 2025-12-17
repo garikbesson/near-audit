@@ -26,7 +26,7 @@ CodeAuditor()
 2. Sets up path to `concepts/` directory
 
 **Dependencies:**
-- Fireworks AI API key configured
+- Fireworks AI API key (via `FIREWORKS_API_KEY` environment variable)
 - `concepts/` directory with markdown documentation files
 
 ---
@@ -298,7 +298,7 @@ NEAR Smart Contract Security Audit
 - `concepts/*.md` - Security concept documentation files
 
 ### API Configuration
-- Fireworks AI API key (hardcoded in `CodeAuditor.__init__`)
+- Fireworks AI API key (set via `FIREWORKS_API_KEY` environment variable)
 - Model: `accounts/fireworks/models/llama4-maverick-instruct-basic`
 
 ### Temperature

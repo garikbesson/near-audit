@@ -44,3 +44,21 @@ See `AUDIT_ARCHITECTURE.md` for detailed architecture documentation.
 - Uses OpenAI (Fireworks AI) for LLM analysis
 - Each concept file is checked against the code separately
 
+## Environment Variables
+
+- `FIREWORKS_API_KEY` - Required. Your Fireworks AI API key for LLM access.
+  
+  You can set it in two ways:
+  
+  **Option 1: Using .env file (recommended)**
+  ```bash
+  # Copy the example file
+  cp .env.example .env
+  # Edit .env and add your API key
+  ```
+  
+  **Option 2: Export as environment variable**
+  ```bash
+  export FIREWORKS_API_KEY="your_api_key_here"
+  ```
+

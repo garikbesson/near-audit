@@ -104,6 +104,23 @@ fi
    pip install -r requirements.txt
    ```
 
+3. Environment variable must be set:
+   
+   **Option 1: Using .env file (recommended)**
+   ```bash
+   # Copy the example file
+   cp .env.example .env
+   # Edit .env and add your API key:
+   # FIREWORKS_API_KEY=your_api_key_here
+   ```
+   
+   **Option 2: Export as environment variable**
+   ```bash
+   export FIREWORKS_API_KEY="your_api_key_here"
+   ```
+   
+   The `FIREWORKS_API_KEY` environment variable is required for LLM access.
+
 ## Troubleshooting
 
 ### Error: "File not found"
@@ -117,6 +134,16 @@ fi
 ### Error: "ModuleNotFoundError"
 - Activate virtual environment: `source venv/bin/activate`
 - Install dependencies: `pip install -r requirements.txt`
+
+### Error: "FIREWORKS_API_KEY environment variable is not set"
+- **Using .env file (recommended)**: Create a `.env` file in the project root:
+  ```bash
+  cp .env.example .env
+  # Then edit .env and add your API key
+  ```
+- **Or export as environment variable**: `export FIREWORKS_API_KEY="your_api_key_here"`
+- Make sure to export it in your current shell session
+- For persistent setup, add it to your `~/.bashrc` or `~/.zshrc` file
 
 ### No issues found but you expect issues
 - The LLM might not have detected the issue

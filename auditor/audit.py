@@ -4,7 +4,7 @@ Command-line tool for auditing NEAR smart contract code
 
 Usage:
     python auditor/audit.py <file_path> [concept_name]
-    
+
 Examples:
     python auditor/audit.py /path/to/contract.rs
     python auditor/audit.py ./tests/test_contract.rs private_methods

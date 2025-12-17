@@ -12,7 +12,11 @@ import re
 from glob import glob
 from typing import List, Dict, Any
 
+from dotenv import load_dotenv
 import openai
+
+# Load environment variables from .env file
+load_dotenv()
 
 
 class CodeAuditor:
@@ -20,9 +24,15 @@ class CodeAuditor:
 
     def __init__(self):
         """Initialize the code auditor with LLM client."""
+        api_key = os.getenv("FIREWORKS_API_KEY")
+        if not api_key:
+            raise ValueError(
+                "FIREWORKS_API_KEY environment variable is not set. "
+                "Please set it before running the auditor."
+            )
         self.client = openai.OpenAI(
             base_url="https://api.fireworks.ai/inference/v1",
-            api_key="fw_3ZhJ7fyeBwaWGbPYn1tANbDg",
+            api_key=api_key,
         )
 
         # Get project root and concepts directory
@@ -94,7 +104,7 @@ class CodeAuditor:
         """
         with open(file_path, 'r', encoding='utf-8') as f:
             content = f.read()
-        
+
         # Check if it's a JSON file
         if file_path.endswith('.json'):
             try:
@@ -104,10 +114,10 @@ class CodeAuditor:
                 raise ValueError(
                     f"Invalid JSON in concept file {file_path}: {e}"
                 )
-        
+
         # For .md files, return as-is
         return content
-    
+
     def _format_json_concept(self, json_data: Dict[str, Any]) -> str:
         """
         Convert JSON concept file to readable text format for LLM.
@@ -118,7 +128,7 @@ class CodeAuditor:
         concept_name = json_data.get('concept', 'unknown')
         lines.append(f"# {concept_name.upper()}")
         lines.append("")
-        
+
         # Add rules
         if 'rules' in json_data and json_data['rules']:
             lines.append("## Rules")
@@ -131,7 +141,7 @@ class CodeAuditor:
                 if check:
                     lines.append(f"  - Check: {check}")
                 lines.append("")
-        
+
         # Add bad examples
         if 'bad_examples' in json_data and json_data['bad_examples']:
             lines.append("## Bad Examples (Vulnerabilities)")
@@ -146,7 +156,7 @@ class CodeAuditor:
                 lines.append("```")
                 lines.append(f"*Explanation*: {explanation}")
                 lines.append("")
-        
+
         # Add good examples
         if 'good_examples' in json_data and json_data['good_examples']:
             lines.append("## Good Examples (Secure Code)")
@@ -161,7 +171,7 @@ class CodeAuditor:
                 lines.append("```")
                 lines.append(f"*Explanation*: {explanation}")
                 lines.append("")
-        
+
         # Add do_not_flag patterns
         if 'do_not_flag' in json_data and json_data['do_not_flag']:
             lines.append("## What NOT to Flag")
@@ -171,7 +181,7 @@ class CodeAuditor:
                 explanation = item.get('explanation', '')
                 lines.append(f"- **{pattern}**: {explanation}")
             lines.append("")
-        
+
         return "\n".join(lines)
 
     def analyze_code_with_concept(
@@ -199,7 +209,7 @@ class CodeAuditor:
         potential_locations = self._pass1_enumerate_locations(
             code, file_path, concept_name, concept_content
         )
-        
+
         print(f"[PASS 1] Found {len(potential_locations)} potential location(s) to check")
         if potential_locations:
             for i, loc in enumerate(potential_locations, 1):
@@ -207,17 +217,17 @@ class CodeAuditor:
                     f"  {i}. {loc.get('function_name', 'unknown')} "
                     f"(lines {loc.get('line_range', 'unknown')})"
                 )
-        
+
         if not potential_locations:
             print(f"[PASS 1] No potential locations found for {concept_name}")
             return []
-        
+
         # PASS 2: Check each location for actual vulnerabilities
         print(f"\n[PASS 2] Checking {len(potential_locations)} location(s) for vulnerabilities...")
         issues = self._pass2_check_locations(
             code, file_path, concept_name, concept_content, potential_locations
         )
-        
+
         print(f"[PASS 2] Found {len(issues)} actual vulnerability/vulnerabilities")
         if issues:
             for i, issue in enumerate(issues, 1):
@@ -225,12 +235,12 @@ class CodeAuditor:
                     f"  {i}. Line {issue.get('line_number', 'unknown')}: "
                     f"{issue.get('issue_description', 'No description')[:60]}..."
                 )
-        
+
         # Add file_path and concept_name to each issue
         for issue in issues:
             issue['file_path'] = file_path
             issue['concept'] = concept_name
-        
+
         return issues
 
     def _pass1_enumerate_locations(
@@ -467,7 +477,7 @@ Return ONLY valid JSON, no additional text."""
 
         # Perform self-consistency: analyze twice independently
         print(f"[PASS 2] Performing self-consistency check: analyzing {len(locations)} location(s) twice independently...")
-        
+
         try:
             # First independent analysis
             print("[PASS 2] Analysis 1/2: Starting first independent analysis...")
@@ -475,14 +485,14 @@ Return ONLY valid JSON, no additional text."""
                 system_prompt, user_prompt, "1/2"
             )
             print(f"[PASS 2] Analysis 1/2: Found {len(issues_1)} issue(s)")
-            
+
             # Second independent analysis
             print("[PASS 2] Analysis 2/2: Starting second independent analysis...")
             issues_2 = self._single_analysis(
                 system_prompt, user_prompt, "2/2"
             )
             print(f"[PASS 2] Analysis 2/2: Found {len(issues_2)} issue(s)")
-            
+
             # Compare results
             if self._results_match(issues_1, issues_2):
                 print("[PASS 2] Self-consistency: Both analyses agree. Using result.")
@@ -507,12 +517,12 @@ Return ONLY valid JSON, no additional text."""
     ) -> List[Dict[str, Any]]:
         """
         Perform a single independent analysis.
-        
+
         Args:
             system_prompt: System prompt for the LLM
             user_prompt: User prompt for the LLM
             analysis_label: Label for logging (e.g., "1/2", "2/2")
-        
+
         Returns:
             List of issues found
         """
@@ -550,11 +560,11 @@ Return ONLY valid JSON, no additional text."""
     ) -> bool:
         """
         Check if two analysis results match.
-        
+
         Args:
             issues_1: First analysis results
             issues_2: Second analysis results
-        
+
         Returns:
             True if results match, False otherwise
         """
@@ -568,14 +578,14 @@ Return ONLY valid JSON, no additional text."""
                     'recommendation': issue.get('recommendation', '').strip()
                 })
             return sorted(normalized, key=lambda x: x['line_number'] or 0)
-        
+
         norm_1 = normalize(issues_1)
         norm_2 = normalize(issues_2)
-        
+
         if len(norm_1) != len(norm_2):
             print(f"[PASS 2] Self-consistency: Different number of issues ({len(norm_1)} vs {len(norm_2)})")
             return False
-        
+
         for i, (issue_1, issue_2) in enumerate(zip(norm_1, norm_2)):
             if (issue_1['line_number'] != issue_2['line_number'] or
                     issue_1['issue_description'] !=
@@ -586,7 +596,7 @@ Return ONLY valid JSON, no additional text."""
                     f"{issue_2['line_number']}"
                 )
                 return False
-        
+
         return True
 
     def _reconcile_results(
@@ -603,7 +613,7 @@ Return ONLY valid JSON, no additional text."""
     ) -> List[Dict[str, Any]]:
         """
         Reconcile two different analysis results by asking LLM to merge them.
-        
+
         Args:
             issues_1: First analysis results
             issues_2: Second analysis results
@@ -614,7 +624,7 @@ Return ONLY valid JSON, no additional text."""
             locations_text: Formatted text of locations to check
             system_prompt: Original system prompt
             user_prompt: Original user prompt
-        
+
         Returns:
             Reconciled list of issues
         """
@@ -628,10 +638,10 @@ Return ONLY valid JSON, no additional text."""
                 result += f"   Description: {issue.get('issue_description', '')}\n"
                 result += f"   Recommendation: {issue.get('recommendation', '')}\n"
             return result
-        
+
         issues_1_text = format_issues(issues_1, "1/2")
         issues_2_text = format_issues(issues_2, "2/2")
-        
+
         reconcile_system_prompt = (
             "You are a security expert for NEAR Protocol smart contracts. "
             "Two independent analyses of the same code were performed, and "
@@ -647,7 +657,7 @@ Return ONLY valid JSON, no additional text."""
             "4. Return the final merged result with only the correct issues\n\n"
             "Return a JSON array with the same format as the original analyses."
         )
-        
+
         reconcile_user_prompt = f"""Reconcile the differences between two independent analyses.
 
 File: {file_path}
@@ -694,7 +704,7 @@ If no issues are found after reconciliation, return a list of safe_location obje
 ]
 
 Return ONLY valid JSON, no additional text."""
-        
+
         try:
             print("[PASS 2] Self-consistency: Sending reconciliation request to LLM...")
             response = self.client.chat.completions.create(
@@ -707,14 +717,14 @@ Return ONLY valid JSON, no additional text."""
                 top_p=0.9,
                 presence_penalty=0.0,
             )
-            
+
             response_text = response.choices[0].message.content.strip()
             print("[PASS 2] Self-consistency: Received reconciliation response")
             print(f"[PASS 2] Self-consistency: Raw response (first 500 chars): {response_text[:500]}")
             reconciled_issues = self._parse_response(response_text)
             print(f"[PASS 2] Self-consistency: Parsed {len(reconciled_issues)} issue(s) from reconciliation")
             return reconciled_issues
-            
+
         except Exception as e:
             print(f"[PASS 2] Self-consistency: ERROR during reconciliation: {e}")
             # Fallback: return the union of both analyses (more conservative)
@@ -726,17 +736,17 @@ Return ONLY valid JSON, no additional text."""
     ) -> List[Dict[str, Any]]:
         """
         Merge two issue lists, removing duplicates.
-        
+
         Args:
             issues_1: First list of issues
             issues_2: Second list of issues
-        
+
         Returns:
             Merged list without duplicates
         """
         merged = []
         seen = set()
-        
+
         for issue in issues_1 + issues_2:
             # Use line_number as key for deduplication
             line_num = issue.get('line_number')
@@ -748,7 +758,7 @@ Return ONLY valid JSON, no additional text."""
             else:
                 # If no line_number, add anyway (shouldn't happen)
                 merged.append(issue)
-        
+
         # Sort by line_number
         merged.sort(key=lambda x: x.get('line_number', 0))
         return merged
@@ -758,7 +768,7 @@ Return ONLY valid JSON, no additional text."""
         if not response_text or not response_text.strip():
             print("[PASS 1] WARNING: Empty response received")
             return []
-        
+
         # Try to find JSON in code blocks first
         json_match = re.search(r'```(?:json)?\s*(\[.*?\])\s*```', response_text, re.DOTALL)
         if json_match:
@@ -923,7 +933,7 @@ Return ONLY valid JSON, no additional text."""
                     issue_keys = ['line_number', 'issue_description', 'recommendation']
                     # Check if it's a safe_location object (has safety info)
                     safe_keys = ['function_name', 'line_range', 'safety_explanation']
-                    
+
                     if all(key in item for key in issue_keys):
                         # This is an issue object
                         try:

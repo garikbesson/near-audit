@@ -3,11 +3,12 @@
 Command-line tool for auditing NEAR smart contract code
 
 Usage:
-    python auditor/audit.py <file_path>
+    python auditor/audit.py <file_path> [concept_name]
     
-Example:
+Examples:
     python auditor/audit.py /path/to/contract.rs
-    python auditor/audit.py ./tests/test_contract.rs
+    python auditor/audit.py ./tests/test_contract.rs private_methods
+    python auditor/audit.py contract.rs callbacks
 """
 
 import sys
@@ -43,6 +44,18 @@ Examples:
     )
 
     parser.add_argument(
+        "concept_name",
+        type=str,
+        nargs="?",
+        default=None,
+        help=(
+            "Name of the concept file to use "
+            "(without .md or .json extension). "
+            "If not specified, all concepts will be checked."
+        )
+    )
+
+    parser.add_argument(
         "-v", "--verbose",
         action="store_true",
         help="Show verbose output"
@@ -71,14 +84,21 @@ Examples:
     print("NEAR Smart Contract Security Audit")
     print("=" * 70)
     print(f"\n📁 File: {file_path}")
-    print("📊 Analyzing code against all security concepts...\n")
+
+    if args.concept_name:
+        print(f"📋 Concept: {args.concept_name}")
+        print("📊 Analyzing code against specified security concept...\n")
+    else:
+        print("📊 Analyzing code against all security concepts...\n")
 
     try:
         # Initialize auditor
         auditor = CodeAuditor()
 
         # Audit the file
-        issues, all_concepts = auditor.audit_file(file_path)
+        issues, all_concepts = auditor.audit_file(
+            file_path, concept_name=args.concept_name
+        )
 
         # Group issues by concept
         issues_by_concept = {}
@@ -127,7 +147,7 @@ Examples:
             sys.exit(0)
 
     except FileNotFoundError as e:
-        print(f"❌ Error: File not found - {str(e)}")
+        print(f"❌ Error: {str(e)}")
         sys.exit(1)
     except Exception as e:
         print(f"❌ Error during audit: {str(e)}")

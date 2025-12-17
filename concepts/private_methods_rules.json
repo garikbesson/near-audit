@@ -1,0 +1,139 @@
+{
+  "concept": "private methods",
+  "rules": [
+    {
+      "id": "PM-1",
+      "description": "Methods with 'internal' in name declared as 'pub fn' without '#[private]' or 'pub(crate)' are vulnerabilities",
+      "check": "Does the method name contain 'internal' (e.g., internal_*, *_internal) AND is it declared as 'pub fn' WITHOUT '#[private]' decorator AND is it NOT 'pub(crate) fn'?"
+    },
+    {
+      "id": "PM-2",
+      "description": "Methods with 'helper' in name declared as 'pub fn' without '#[private]' or 'pub(crate)' are vulnerabilities",
+      "check": "Does the method name contain 'helper' (e.g., *_helper, helper_*) AND is it declared as 'pub fn' WITHOUT '#[private]' decorator AND is it NOT 'pub(crate) fn'?"
+    },
+    {
+      "id": "PM-3",
+      "description": "Methods with callback-indicating names (callback_*, on_*, after_*, *_callback) declared as 'pub fn' without '#[private]' are vulnerabilities",
+      "check": "Does the method name match callback patterns (callback_*, on_*, after_*, *_callback, *_on_*) AND is it declared as 'pub fn' WITHOUT '#[private]' decorator?"
+    },
+    {
+      "id": "PM-4",
+      "description": "Methods called via '.then()' in cross-contract calls must have '#[private]' decorator",
+      "check": "Is the method referenced in a '.then()' call AND does it NOT have '#[private]' decorator?"
+    },
+    {
+      "id": "PM-5",
+      "description": "Manual predecessor checks should be replaced with '#[private]' decorator",
+      "check": "Does the method use 'assert_eq!(env::predecessor_account_id(), env::current_account_id(), ...)' instead of '#[private]' decorator?"
+    },
+    {
+      "id": "PM-6",
+      "description": "Methods with 'pub(crate)' should NOT have '#[private]' decorator (it's redundant)",
+      "check": "Is the method declared as 'pub(crate) fn' AND does it have '#[private]' decorator?"
+    },
+    {
+      "id": "PM-7",
+      "description": "Callback methods must be 'pub fn' with '#[private]', not 'pub(crate) fn'",
+      "check": "Is the method a callback (has callback-indicating name or called via '.then()') AND is it declared as 'pub(crate) fn' instead of '#[private] pub fn'?"
+    }
+  ],
+  "bad_examples": [
+    {
+      "rule_id": "PM-1",
+      "code": "pub fn internal_update_state(&mut self, account_id: &AccountId, value: u128) {\n    // Anyone can call this! Should be pub(crate) fn\n    self.state.insert(account_id, &value);\n}",
+      "explanation": "Method with 'internal' in name is declared as 'pub fn' without protection. Should be 'pub(crate) fn' for internal use."
+    },
+    {
+      "rule_id": "PM-2",
+      "code": "pub fn format_helper(&mut self, data: &[u8]) -> Vec<u8> {\n    // Anyone can call this! Should be pub(crate) fn or #[private] pub fn\n    self.process_data(data)\n}",
+      "explanation": "Method with 'helper' in name is declared as 'pub fn' without protection. Should be 'pub(crate) fn' for internal use or '#[private] pub fn' if it's a callback."
+    },
+    {
+      "rule_id": "PM-3",
+      "code": "pub fn callback_on_complete(&mut self, result: Result<(), String>) {\n    // Attacker can call this directly!\n    match result {\n        Ok(_) => {\n            self.commit_operation();\n        }\n        Err(_) => {\n            // Attacker can trigger this to rollback legitimate operations\n        }\n    }\n}",
+      "explanation": "Callback method with 'callback' in name is declared as 'pub fn' without '#[private]' decorator. Must have '#[private]' to prevent external calls."
+    },
+    {
+      "rule_id": "PM-3",
+      "code": "pub fn on_operation_done(&mut self, result: Result<u128, String>) {\n    // Name indicates callback but no protection!\n    if let Ok(value) = result {\n        self.update_value(value);\n    }\n}",
+      "explanation": "Method with 'on_' prefix (callback indicator) is declared as 'pub fn' without '#[private]' decorator."
+    },
+    {
+      "rule_id": "PM-3",
+      "code": "pub fn after_operation(&mut self, success: bool) {\n    // Name indicates callback but no protection!\n    if success {\n        self.commit();\n    } else {\n        self.rollback();\n    }\n}",
+      "explanation": "Method with 'after_' prefix (callback indicator) is declared as 'pub fn' without '#[private]' decorator."
+    },
+    {
+      "rule_id": "PM-5",
+      "code": "pub fn internal_process(&mut self) {\n    assert_eq!(\n        env::predecessor_account_id(),\n        env::current_account_id(),\n        \"Only contract can call this method\"\n    );\n    self.perform_operation();\n}",
+      "explanation": "Manual predecessor check should be replaced with '#[private]' decorator for better maintainability."
+    },
+    {
+      "rule_id": "PM-6",
+      "code": "#[private]\npub(crate) fn internal_process(&mut self) {\n    // This is redundant - pub(crate) already prevents external calls\n}",
+      "explanation": "'pub(crate) fn' methods don't need '#[private]' decorator as they're already protected at compile time."
+    },
+    {
+      "rule_id": "PM-7",
+      "code": "pub(crate) fn callback_handler(&mut self, result: Result<(), String>) {\n    // This won't work! Callbacks need to be pub\n}",
+      "explanation": "Callback methods must be 'pub fn' to receive cross-contract call results, but protected with '#[private]'."
+    }
+  ],
+  "good_examples": [
+    {
+      "rule_id": "PM-1",
+      "code": "pub(crate) fn internal_update_state(&mut self, account_id: &AccountId, value: u128) {\n    // Cannot be called externally - compile-time protection\n    self.state.insert(account_id, &value);\n}",
+      "explanation": "Method with 'internal' in name correctly uses 'pub(crate) fn' for internal use."
+    },
+    {
+      "rule_id": "PM-2",
+      "code": "pub(crate) fn format_helper(&mut self, data: &[u8]) -> Vec<u8> {\n    // Cannot be called externally - compile-time protection\n    self.process_data(data)\n}",
+      "explanation": "Method with 'helper' in name correctly uses 'pub(crate) fn' for internal use."
+    },
+    {
+      "rule_id": "PM-2",
+      "code": "#[private]\npub fn format_helper(&mut self, data: &[u8]) -> Vec<u8> {\n    // Protected with #[private] - only contract can call\n    // Use this if the method needs to be a callback\n    self.process_data(data)\n}",
+      "explanation": "Method with 'helper' in name correctly uses '#[private] pub fn' if it needs to be a callback."
+    },
+    {
+      "rule_id": "PM-3",
+      "code": "#[private]\npub fn callback_on_complete(&mut self, result: Result<(), String>) {\n    // Only the contract can call this after the cross-contract call\n    match result {\n        Ok(_) => {\n            self.commit_operation();\n        }\n        Err(_) => {\n            // Rollback state and refund user\n            Promise::new(self.pending_user.clone()).transfer(self.pending_amount);\n        }\n    }\n}",
+      "explanation": "Callback method correctly protected with '#[private]' decorator."
+    },
+    {
+      "rule_id": "PM-3",
+      "code": "#[private]\npub fn on_operation_done(&mut self, result: Result<u128, String>) {\n    // Protected - only contract can call\n    if let Ok(value) = result {\n        self.update_value(value);\n    }\n}",
+      "explanation": "Method with 'on_' prefix correctly protected with '#[private]' decorator."
+    },
+    {
+      "rule_id": "PM-3",
+      "code": "#[private]\npub fn after_operation(&mut self, success: bool) {\n    // Protected - only contract can call\n    if success {\n        self.commit();\n    } else {\n        self.rollback();\n    }\n}",
+      "explanation": "Method with 'after_' prefix correctly protected with '#[private]' decorator."
+    },
+    {
+      "rule_id": "PM-1,PM-2",
+      "code": "pub(crate) fn internal_calculate(&self, amount: u128) -> u128 {\n    // Cannot be called externally - compile-time protection\n    amount * self.rate / 10000\n}\n\npub(crate) fn calculate_helper(&self, amount: u128) -> u128 {\n    // Cannot be called externally - compile-time protection\n    amount * self.rate / 10000\n}",
+      "explanation": "Internal helper methods correctly use 'pub(crate) fn' - not part of contract interface."
+    },
+    {
+      "rule_id": "PM-7",
+      "code": "#[private]\npub fn callback_handler(&mut self, result: Result<(), String>) {\n    // Correctly declared as pub fn with #[private] for callbacks\n    match result {\n        Ok(_) => self.commit_state(),\n        Err(_) => self.rollback_state(),\n    }\n}",
+      "explanation": "Callback method correctly uses '#[private] pub fn' to receive cross-contract call results while being protected."
+    }
+  ],
+  "do_not_flag": [
+    {
+      "pattern": "pub(crate) fn",
+      "explanation": "Methods declared as 'pub(crate) fn' are already correctly protected at compile time and are not part of the contract interface."
+    },
+    {
+      "pattern": "#[private] pub fn",
+      "explanation": "Methods with '#[private]' decorator are already correctly protected from external calls."
+    },
+    {
+      "pattern": "pub fn without 'internal', 'helper', or callback names",
+      "explanation": "Public methods without indicator names may be intentionally part of the contract interface."
+    }
+  ]
+}
+

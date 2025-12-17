@@ -35,6 +35,11 @@
       "id": "PM-7",
       "description": "Callback methods must be 'pub fn' with '#[private]', not 'pub(crate) fn'",
       "check": "Is the method a callback (has callback-indicating name or called via '.then()') AND is it declared as 'pub(crate) fn' instead of '#[private] pub fn'?"
+    },
+    {
+      "id": "PM-8",
+      "description": "Methods in 'impl Contract {}' blocks without '#[near]' or '#[near_bindgen]' decorators are NOT public and should NOT be flagged",
+      "check": "Is the method in an 'impl Contract {}' block that does NOT have '#[near]' or '#[near_bindgen]' decorator? If yes, DO NOT FLAG - these methods are not part of the contract interface."
     }
   ],
   "bad_examples": [
@@ -77,6 +82,11 @@
       "rule_id": "PM-7",
       "code": "pub(crate) fn callback_handler(&mut self, result: Result<(), String>) {\n    // This won't work! Callbacks need to be pub\n}",
       "explanation": "Callback methods must be 'pub fn' to receive cross-contract call results, but protected with '#[private]'."
+    },
+    {
+      "rule_id": "PM-8",
+      "code": "// This impl block is NOT decorated with #[near] or #[near_bindgen]\nimpl Contract {\n    pub fn internal_helper(&self) {\n        // DO NOT FLAG - not in decorated impl block\n    }\n}",
+      "explanation": "Methods in impl Contract {} blocks without #[near] or #[near_bindgen] decorators are NOT part of the contract interface and should NOT be flagged as vulnerabilities."
     }
   ],
   "good_examples": [
@@ -119,6 +129,11 @@
       "rule_id": "PM-7",
       "code": "#[private]\npub fn callback_handler(&mut self, result: Result<(), String>) {\n    // Correctly declared as pub fn with #[private] for callbacks\n    match result {\n        Ok(_) => self.commit_state(),\n        Err(_) => self.rollback_state(),\n    }\n}",
       "explanation": "Callback method correctly uses '#[private] pub fn' to receive cross-contract call results while being protected."
+    },
+    {
+      "rule_id": "PM-8",
+      "code": "// This impl block is NOT decorated - methods are NOT public\nimpl Contract {\n    pub fn internal_helper(&self) -> u128 {\n        // ✅ SAFE - Cannot be called externally\n        // Not in #[near] impl block\n        self.calculate_value()\n    }\n    \n    pub fn helper_calculate(&self, amount: u128) -> u128 {\n        // ✅ SAFE - Cannot be called externally\n        // Not in #[near] impl block\n        amount * 2\n    }\n}\n\n// This impl block IS decorated - methods ARE public\n#[near]\nimpl Contract {\n    pub fn public_method(&self) {\n        // This CAN be called externally\n    }\n}",
+      "explanation": "Methods in impl Contract {} blocks without #[near] or #[near_bindgen] decorators are NOT part of the contract interface, even if declared as 'pub fn'. These should NOT be flagged as vulnerabilities."
     }
   ],
   "do_not_flag": [
@@ -133,6 +148,10 @@
     {
       "pattern": "pub fn without 'internal', 'helper', or callback names",
       "explanation": "Public methods without indicator names may be intentionally part of the contract interface."
+    },
+    {
+      "pattern": "Methods in impl Contract {} without #[near] or #[near_bindgen]",
+      "explanation": "Methods in impl Contract {} blocks that are not decorated with #[near] or #[near_bindgen] are NOT part of the contract's public interface and cannot be called externally. These should NOT be flagged as vulnerabilities."
     }
   ]
 }

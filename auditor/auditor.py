@@ -258,10 +258,13 @@ class CodeAuditor:
             f"You are a security expert for NEAR Protocol smart contracts. "
             f"Your task is to LIST all methods and code locations where issues related to {concept_name} COULD exist according to the documentation.\n\n"
             f"IMPORTANT: Do NOT check if the issue actually exists yet. Just enumerate ALL locations where it COULD exist.\n\n"
+            f"CRITICAL: Only list methods that are in impl Contract {{}} blocks that ARE decorated with #[near] or #[near_bindgen]. "
+            f"Methods in impl Contract {{}} blocks WITHOUT #[near] or #[near_bindgen] decorators are NOT part of the contract's public interface and should NOT be listed.\n\n"
             f"Use the provided security documentation to identify:\n"
             f"- Methods with specific naming patterns (e.g., internal_*, *_helper, callback_*, on_*, after_*)\n"
             f"- Methods that match vulnerability patterns described in the documentation\n"
-            f"- Code locations mentioned in the documentation as potential problem areas\n\n"
+            f"- Code locations mentioned in the documentation as potential problem areas\n"
+            f"- BUT ONLY if they are in decorated impl blocks (#[near] or #[near_bindgen])\n\n"
             f"Return a JSON array. Each item should have:\n"
             f"- function_name: string (the name of the function/method)\n"
             f"- line_range: string (e.g., '100-105' or '100' for single line)\n"
@@ -283,10 +286,15 @@ Security Documentation ({concept_name}):
 
 IMPORTANT: You must return a JSON array. Even if you find no locations, return an empty array [].
 
+CRITICAL RULE: Only list methods that are in impl Contract {{}} blocks that ARE decorated with #[near] or #[near_bindgen].
+- If an impl Contract {{}} block does NOT have #[near] or #[near_bindgen] decorator, methods inside it are NOT part of the contract's public interface
+- DO NOT list methods from undecorated impl Contract {{}} blocks, even if they match naming patterns
+
 Look for:
 - Methods with names matching patterns from documentation (e.g., internal_*, *_helper, callback_*, on_*, after_*)
 - Methods that match vulnerability patterns described in the documentation
 - Any code locations mentioned in the documentation as potential problem areas
+- BUT ONLY if they are in impl Contract {{}} blocks decorated with #[near] or #[near_bindgen]
 
 Return a JSON array of potential locations. Format:
 [
@@ -380,6 +388,10 @@ Return ONLY valid JSON array, no additional text or explanation."""
             "- If no issues are found, you MUST return a list of checked "
             "locations with an explicit explanation why each is safe.\n\n"
             "CRITICAL RULES:\n"
+            "- FIRST: Check if the method is in an impl Contract {{}} block "
+            "that is decorated with #[near] or #[near_bindgen]. If NOT "
+            "decorated, the method is NOT part of the contract interface "
+            "and is SAFE (do NOT report).\n"
             "- If a method has 'internal' or 'helper' in its name and is "
             "declared as 'pub fn' WITHOUT '#[private]' or 'pub(crate)' → "
             "this is ALWAYS a vulnerability. Report it.\n"
@@ -387,13 +399,19 @@ Return ONLY valid JSON array, no additional text or explanation."""
             "after_*) and is declared as 'pub fn' WITHOUT '#[private]' → "
             "this is ALWAYS a vulnerability. Report it.\n"
             "- If protection is PRESENT (method has '#[private]' or is "
-            "'pub(crate) fn') → do NOT report it (it's safe)\n\n"
+            "'pub(crate) fn') → do NOT report it (it's safe)\n"
+            "- If method is in impl Contract {{}} block WITHOUT #[near] or "
+            "#[near_bindgen] decorator → do NOT report it (it's safe, not "
+            "part of contract interface)\n\n"
             "For each location:\n"
             "1. Find the method in the code\n"
-            "2. Check its declaration (pub fn, pub(crate) fn, #[private])\n"
-            "3. If it matches vulnerability patterns from documentation "
+            "2. Check if it's in an impl Contract {{}} block decorated with "
+            "#[near] or #[near_bindgen]. If NOT decorated → SAFE (do not "
+            "report)\n"
+            "3. Check its declaration (pub fn, pub(crate) fn, #[private])\n"
+            "4. If it matches vulnerability patterns from documentation "
             "AND protection is MISSING → report as issue\n"
-            "4. If protection is PRESENT → skip (do not report)\n\n"
+            "5. If protection is PRESENT → skip (do not report)\n\n"
             "Return a JSON array. Each item should be either:\n"
             "- An issue object (if VULNERABLE) with:\n"
             "  * line_number: integer (the line number where the issue is "
@@ -432,19 +450,23 @@ CRITICAL REQUIREMENTS:
 
 IMPORTANT: For each location, you MUST:
 1. Find the exact method in the code (use the function_name and line_range provided)
-2. Check the method declaration:
+2. FIRST: Check if the method is in an impl Contract {{}} block decorated with #[near] or #[near_bindgen]:
+   - If the impl block is NOT decorated → SAFE (do not report, not part of contract interface)
+   - If the impl block IS decorated → continue to step 3
+3. Check the method declaration:
    - Look for 'pub fn' (public function)
    - Look for '#[private]' decorator
    - Look for 'pub(crate) fn' (internal function)
-3. Apply the rules from documentation:
+4. Apply the rules from documentation:
    - If method name contains 'internal' or 'helper' AND it's 'pub fn' WITHOUT '#[private]' or 'pub(crate)' → VULNERABLE
    - If method name contains 'callback', 'on_', 'after_' AND it's 'pub fn' WITHOUT '#[private]' → VULNERABLE
-4. If vulnerability found → report with line_number, issue_description, recommendation
-5. If protection is present → SAFE (do not report)
+5. If vulnerability found → report with line_number, issue_description, recommendation
+6. If protection is present OR method is in undecorated impl block → SAFE (do not report)
 
 Examples:
-- 'pub fn sign_helper(...)' without '#[private]' or 'pub(crate)' → VULNERABLE (must report)
-- 'pub fn internal_stake_from_account(...)' without '#[private]' or 'pub(crate)' → VULNERABLE (must report)
+- Method in impl Contract {{}} WITHOUT #[near] decorator → SAFE (do not report, not part of contract interface)
+- 'pub fn sign_helper(...)' in #[near] impl block without '#[private]' or 'pub(crate)' → VULNERABLE (must report)
+- 'pub fn internal_stake_from_account(...)' in #[near] impl block without '#[private]' or 'pub(crate)' → VULNERABLE (must report)
 - 'pub(crate) fn sign_helper(...)' → SAFE (do not report)
 - '#[private] pub fn callback_after_staking(...)' → SAFE (do not report)
 
@@ -470,6 +492,11 @@ If all locations are SAFE (no issues found):
     "function_name": "callback_handler",
     "line_range": "300-310",
     "safety_explanation": "Method has '#[private]' decorator, which ensures only the contract itself can call it. This is the correct protection for callback methods."
+  }},
+  {{
+    "function_name": "internal_helper",
+    "line_range": "100-105",
+    "safety_explanation": "Method is in impl Contract {{}} block without #[near] or #[near_bindgen] decorator, so it is NOT part of the contract's public interface and cannot be called externally."
   }}
 ]
 

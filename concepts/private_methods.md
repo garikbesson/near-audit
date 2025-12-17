@@ -21,6 +21,7 @@ In NEAR Protocol smart contracts, **private methods** are functions that should 
 **DO NOT FLAG:**
 - `pub(crate) fn` methods - These are already correctly protected
 - `#[private] pub fn` methods - These are already correctly protected
+- Methods in `impl Contract {}` blocks without `#[near]` or `#[near_bindgen]` decorators - These are NOT part of the contract's public interface and cannot be called externally
 - Public methods without "internal", "helper", or callback names - May be intentionally public
 
 ## What Are Private Methods?
@@ -40,7 +41,33 @@ Private methods in NEAR contracts are methods that can only be called by the con
 - Used for internal helper functions and utilities
 - Can only be called from within the same contract code
 
-**Key Difference**: `pub(crate)` methods are excluded from the contract interface at compile time, while `#[private] pub fn` methods are part of the interface but protected at runtime.
+### Type 3: Methods in `impl Contract {}` Without Decorators
+- **CRITICAL**: If an `impl Contract {}` block is NOT marked with `#[near]` or `#[near_bindgen]` decorator, methods inside it are NOT part of the contract's public interface
+- These methods cannot be called externally, even if declared as `pub fn`
+- This applies to legacy code that used `#[near_bindgen]` (before `#[near]` was introduced)
+- **DO NOT FLAG** these methods as vulnerabilities - they are already protected by not being in the decorated impl block
+- Example:
+  ```rust
+  // ✅ SAFE - This impl block is NOT decorated, so methods are not public
+  impl Contract {
+      pub fn internal_helper(&self) {
+          // Cannot be called externally - not in #[near] impl block
+      }
+  }
+  
+  // ✅ PUBLIC - This impl block IS decorated, so methods are public
+  #[near]
+  impl Contract {
+      pub fn public_method(&self) {
+          // CAN be called externally - in #[near] impl block
+      }
+  }
+  ```
+
+**Key Difference**: 
+- `pub(crate)` methods are excluded from the contract interface at compile time
+- `#[private] pub fn` methods are part of the interface but protected at runtime
+- Methods in undecorated `impl Contract {}` blocks are NOT part of the contract interface at all
 
 ## Why Private Methods Matter
 
@@ -141,6 +168,23 @@ In Rust NEAR contracts, there are two ways to create internal methods:
 
 **Correct Implementation:**
 ```rust
+// ✅ CORRECT - Methods in impl block WITHOUT #[near] decorator are NOT public
+// This entire impl block is NOT part of the contract interface
+impl Contract {
+    // Even though this is 'pub fn', it cannot be called externally
+    // because the impl block itself is not decorated
+    pub fn internal_helper(&self) {
+        // Safe - not in #[near] impl block
+    }
+    
+    pub fn calculate_fee(&self, amount: u128) -> u128 {
+        // Safe - not in #[near] impl block
+        amount * self.fee_rate / 10000
+    }
+}
+
+// ✅ CORRECT - This impl block IS decorated, so methods are public
+#[near]
 impl Contract {
     // ✅ CORRECT - pub(crate) method, no #[private] needed
     // This method is NOT part of the contract interface
@@ -168,6 +212,95 @@ impl Contract {
     }
 }
 ```
+
+## Important: `impl Contract {}` Blocks Without Decorators
+
+### Critical Security Note
+
+**If an `impl Contract {}` block is NOT marked with `#[near]` or `#[near_bindgen]` decorator, methods inside it are NOT part of the contract's public interface**, even if they are declared as `pub fn`.
+
+This is important for auditing legacy code that may use `#[near_bindgen]` (the older decorator) or code that has multiple impl blocks.
+
+### Examples
+
+```rust
+// ✅ SAFE - This impl block is NOT decorated
+// Methods here are NOT part of the contract interface
+impl Contract {
+    // Even though this is 'pub fn', it cannot be called externally
+    pub fn internal_helper(&self) {
+        // Safe - not accessible from outside
+    }
+    
+    // This would normally be flagged, but it's safe here
+    pub fn internal_calculate(&self, amount: u128) -> u128 {
+        // Safe - not in #[near] impl block
+        amount * 2
+    }
+    
+    // Callback name, but safe because not in decorated impl block
+    pub fn callback_helper(&mut self) {
+        // Safe - not accessible from outside
+    }
+}
+
+// ✅ PUBLIC - This impl block IS decorated with #[near]
+// Methods here ARE part of the contract interface
+#[near]
+impl Contract {
+    // ✅ CORRECT - Public method (intentionally public)
+    pub fn deposit(&mut self) {
+        let amount = env::attached_deposit();
+        self.balances.insert(&env::signer_account_id(), &amount);
+    }
+    
+    // ❌ VULNERABLE - Should be pub(crate) or #[private]
+    pub fn internal_update_balance(&mut self, account: &AccountId, amount: u128) {
+        // This CAN be called externally - VULNERABILITY!
+    }
+    
+    // ✅ CORRECT - Protected with #[private]
+    #[private]
+    pub fn callback_after_stake(&mut self, result: Result<(), String>) {
+        // Protected - only contract can call
+    }
+}
+```
+
+### Legacy Code: `#[near_bindgen]`
+
+In older NEAR contracts, `#[near_bindgen]` was used instead of `#[near]`. The same rule applies:
+
+```rust
+// ✅ SAFE - Not decorated
+impl Contract {
+    pub fn helper(&self) {
+        // Safe - not accessible
+    }
+}
+
+// ✅ PUBLIC - Decorated with #[near_bindgen]
+#[near_bindgen]
+impl Contract {
+    pub fn public_method(&self) {
+        // This CAN be called externally
+    }
+}
+```
+
+### When Auditing
+
+**DO NOT FLAG** methods in `impl Contract {}` blocks that are:
+- Not decorated with `#[near]` or `#[near_bindgen]`
+- Even if they have "internal", "helper", or callback names
+- Even if they are declared as `pub fn`
+
+These methods are already protected because they are not part of the contract's public interface.
+
+**DO FLAG** methods in `impl Contract {}` blocks that are:
+- Decorated with `#[near]` or `#[near_bindgen]`
+- Have "internal", "helper", or callback names
+- Are declared as `pub fn` without `#[private]` or `pub(crate)`
 
 ### When to Use `#[private] pub fn` vs `pub(crate) fn`
 

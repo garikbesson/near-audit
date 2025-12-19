@@ -332,9 +332,16 @@ Return ONLY valid JSON array, no additional text or explanation."""
                 temperature=0.2,  # Lower temperature for consistent analysis
                 top_p=0.9,
                 presence_penalty=0.0,
+                max_tokens=5000,  # Maximum allowed without streaming
             )
 
             response_text = response.choices[0].message.content.strip()
+            
+            # Check if response was truncated
+            finish_reason = response.choices[0].finish_reason
+            if finish_reason == "length":
+                print("[PASS 1] WARNING: Response was truncated. Results may be incomplete.")
+            
             print("[PASS 1] Received response, parsing locations...")
             print(f"[PASS 1] Raw response (first 500 chars): {response_text[:500]}")
             locations = self._parse_locations_response(response_text)
@@ -563,9 +570,16 @@ Return ONLY valid JSON, no additional text."""
                 temperature=0.2,  # Lower temperature for consistent analysis
                 top_p=0.9,
                 presence_penalty=0.0,
+                max_tokens=5000,  # Maximum allowed without streaming
             )
 
             response_text = response.choices[0].message.content.strip()
+            
+            # Check if response was truncated
+            finish_reason = response.choices[0].finish_reason
+            if finish_reason == "length":
+                print(f"[PASS 2] Analysis {analysis_label}: WARNING: Response was truncated. Results may be incomplete.")
+            
             print(f"[PASS 2] Analysis {analysis_label}: Received response, parsing...")
             print(f"[PASS 2] Analysis {analysis_label}: Raw response (first 500 chars): {response_text[:500]}")
             issues = self._parse_response(response_text)
@@ -743,9 +757,16 @@ Return ONLY valid JSON, no additional text."""
                 temperature=0.2,  # Lower temperature for consistent analysis
                 top_p=0.9,
                 presence_penalty=0.0,
+                max_tokens=4096,  # Increased for reconciliation
             )
 
             response_text = response.choices[0].message.content.strip()
+            
+            # Check if response was truncated
+            finish_reason = response.choices[0].finish_reason
+            if finish_reason == "length":
+                print("[PASS 2] Self-consistency: WARNING: Response was truncated. Results may be incomplete.")
+            
             print("[PASS 2] Self-consistency: Received reconciliation response")
             print(f"[PASS 2] Self-consistency: Raw response (first 500 chars): {response_text[:500]}")
             reconciled_issues = self._parse_response(response_text)
@@ -1131,3 +1152,683 @@ Return ONLY valid JSON, no additional text."""
                 continue
 
         return all_issues, all_concept_names
+
+    def index_project(self, project_dir: str) -> Dict[str, Any]:
+        """
+        Build a structured project index by analyzing all Rust files in a directory.
+
+        Args:
+            project_dir: Path to the project directory containing Rust files
+
+        Returns:
+            Dictionary containing the project index with file analysis
+        """
+        # Find all .rs files recursively
+        rust_files = []
+        for root, dirs, files in os.walk(project_dir):
+            # Skip target directory (Rust build artifacts)
+            if 'target' in root:
+                continue
+            for file in files:
+                if file.endswith('.rs'):
+                    full_path = os.path.join(root, file)
+                    rel_path = os.path.relpath(full_path, project_dir)
+                    rust_files.append((rel_path, full_path))
+
+        if not rust_files:
+            raise ValueError(f"No Rust files found in {project_dir}")
+
+        # Read all files
+        files_content = {}
+        for rel_path, full_path in rust_files:
+            try:
+                with open(full_path, 'r', encoding='utf-8') as f:
+                    files_content[rel_path] = f.read()
+            except Exception as e:
+                print(f"Warning: Could not read {full_path}: {e}")
+
+        # Build user prompt
+        files_section = ""
+        for rel_path, content in files_content.items():
+            files_section += f"---\nFILE: {rel_path}\n\nCODE:\n\n{content}\n\n"
+
+        user_prompt = f"""PROJECT_ROOT: {os.path.abspath(project_dir)}
+
+FILES:
+
+{files_section}TASK:
+
+For each Rust file, identify:
+
+- public contract methods (#[near_bindgen] pub fn)
+
+- private helper methods
+
+- callback methods (Promise::then, ext_* callbacks)
+
+- whether the file mutates contract state
+
+- whether the file performs cross-contract calls
+
+Return ONLY JSON in the following format:
+
+{{
+  "files": {{
+    "file_name.rs": {{
+      "public_methods": [],
+      "private_methods": [],
+      "callbacks": [],
+      "mutates_state": true|false,
+      "cross_contract_calls": true|false
+    }}
+  }}
+}}
+"""
+
+        system_prompt = """SYSTEM:
+
+You are analyzing a NEAR Protocol smart contract project written in Rust.
+
+You are NOT allowed to scan the filesystem yourself.
+
+You can only use the files explicitly provided below.
+
+Your task is to build a structured project index.
+
+Do NOT analyze security yet.
+"""
+
+        # Send request to LLM
+        print(f"[INDEX] Analyzing {len(rust_files)} Rust file(s)...")
+        try:
+            response = self.client.chat.completions.create(
+                model="accounts/fireworks/models/llama4-maverick-instruct-basic",
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_prompt}
+                ],
+                temperature=0.2,
+                top_p=0.9,
+                presence_penalty=0.0,
+                max_tokens=5000,  # Maximum allowed without streaming
+            )
+
+            response_text = response.choices[0].message.content.strip()
+            
+            # Check if response was truncated
+            finish_reason = response.choices[0].finish_reason
+            if finish_reason == "length":
+                print("[INDEX] WARNING: Response was truncated. Attempting to parse partial JSON...")
+            
+            # Try to extract JSON from response
+            # Remove markdown code blocks if present
+            if "```json" in response_text:
+                response_text = response_text.split("```json")[1].split("```")[0].strip()
+            elif "```" in response_text:
+                response_text = response_text.split("```")[1].split("```")[0].strip()
+
+            # Parse JSON
+            try:
+                project_index = json.loads(response_text)
+                print("[INDEX] Successfully parsed project index")
+                return project_index
+            except json.JSONDecodeError as e:
+                # Try to fix incomplete JSON by closing brackets
+                if "Unterminated string" in str(e) or "Expecting" in str(e):
+                    print("[INDEX] WARNING: JSON appears incomplete. Attempting to fix...")
+                    # Try to close the JSON structure
+                    try:
+                        # Count open/close braces
+                        open_braces = response_text.count('{')
+                        close_braces = response_text.count('}')
+                        open_brackets = response_text.count('[')
+                        close_brackets = response_text.count(']')
+                        
+                        # Try to close incomplete JSON
+                        fixed_text = response_text
+                        if open_braces > close_braces:
+                            fixed_text += '\n' + '}' * (open_braces - close_braces)
+                        if open_brackets > close_brackets:
+                            fixed_text += '\n' + ']' * (open_brackets - close_brackets)
+                        
+                        project_index = json.loads(fixed_text)
+                        print("[INDEX] Successfully parsed project index (after fixing incomplete JSON)")
+                        return project_index
+                    except:
+                        pass
+                
+                print(f"[INDEX] ERROR: Failed to parse JSON response: {e}")
+                print(f"[INDEX] Response length: {len(response_text)} characters")
+                print(f"[INDEX] Response text (first 1000 chars): {response_text[:1000]}")
+                if len(response_text) > 1000:
+                    print(f"[INDEX] Response text (last 500 chars): {response_text[-500:]}")
+                raise ValueError(f"LLM response is not valid JSON: {e}")
+
+        except Exception as e:
+            print(f"[INDEX] ERROR: Failed to get response from LLM: {e}")
+            raise
+
+    def build_method_graph(
+        self, project_dir: str, project_index: Dict[str, Any] = None
+    ) -> List[Dict[str, Any]]:
+        """
+        Build a graph of method relationships across files in the project.
+
+        Args:
+            project_dir: Path to the project directory containing Rust files
+            project_index: Optional pre-built project index. If None, will build it.
+
+        Returns:
+            List of relationship dictionaries
+        """
+        # Build index if not provided
+        if project_index is None:
+            print("[GRAPH] Building project index first...")
+            project_index = self.index_project(project_dir)
+
+        # Find all .rs files recursively
+        rust_files = []
+        for root, dirs, files in os.walk(project_dir):
+            # Skip target directory (Rust build artifacts)
+            if 'target' in root:
+                continue
+            for file in files:
+                if file.endswith('.rs'):
+                    full_path = os.path.join(root, file)
+                    rel_path = os.path.relpath(full_path, project_dir)
+                    rust_files.append((rel_path, full_path))
+
+        if not rust_files:
+            raise ValueError(f"No Rust files found in {project_dir}")
+
+        # Read all files
+        files_content = {}
+        for rel_path, full_path in rust_files:
+            try:
+                with open(full_path, 'r', encoding='utf-8') as f:
+                    files_content[rel_path] = f.read()
+            except Exception as e:
+                print(f"Warning: Could not read {full_path}: {e}")
+
+        # Build user prompt
+        files_section = ""
+        for rel_path, content in files_content.items():
+            files_section += f"---\nFILE: {rel_path}\n\nCODE:\n\n{content}\n\n"
+
+        # Convert project_index to JSON string
+        index_json = json.dumps(project_index, indent=2)
+
+        user_prompt = f"""PROJECT_INDEX:
+
+{index_json}
+
+FILES:
+
+{files_section}TASK:
+
+Identify relationships between methods across files.
+
+Return a JSON array:
+
+[
+  {{
+    "from_method": "withdraw",
+    "from_file": "src/lib.rs",
+    "to_method": "on_withdraw_complete",
+    "to_file": "src/callbacks.rs",
+    "type": "promise_callback | direct_call | ext_contract_call"
+  }}
+]
+
+Rules:
+- Only include relationships explicitly present in code.
+- If unsure, omit.
+"""
+
+        system_prompt = """SYSTEM:
+
+You are analyzing method relationships in a NEAR smart contract project.
+
+Only use the provided project index and source files.
+
+Do NOT guess.
+"""
+
+        # Send request to LLM
+        print(f"[GRAPH] Analyzing method relationships in {len(rust_files)} file(s)...")
+        try:
+            response = self.client.chat.completions.create(
+                model="accounts/fireworks/models/llama4-maverick-instruct-basic",
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_prompt}
+                ],
+                temperature=0.2,
+                top_p=0.9,
+                presence_penalty=0.0,
+                max_tokens=5000,  # Maximum allowed without streaming
+            )
+
+            response_text = response.choices[0].message.content.strip()
+            
+            # Check if response was truncated
+            finish_reason = response.choices[0].finish_reason
+            if finish_reason == "length":
+                print("[GRAPH] WARNING: Response was truncated. Attempting to parse partial JSON...")
+            
+            # Try to extract JSON from response
+            # Remove markdown code blocks if present
+            if "```json" in response_text:
+                response_text = response_text.split("```json")[1].split("```")[0].strip()
+            elif "```" in response_text:
+                response_text = response_text.split("```")[1].split("```")[0].strip()
+
+            # Parse JSON
+            try:
+                method_graph = json.loads(response_text)
+                if not isinstance(method_graph, list):
+                    # If LLM returned object with array inside, extract it
+                    if isinstance(method_graph, dict) and "relationships" in method_graph:
+                        method_graph = method_graph["relationships"]
+                    else:
+                        raise ValueError("Response is not a JSON array")
+                print(f"[GRAPH] Successfully parsed {len(method_graph)} relationship(s)")
+                return method_graph
+            except json.JSONDecodeError as e:
+                # Try to fix incomplete JSON
+                if "Unterminated string" in str(e) or "Expecting" in str(e):
+                    print("[GRAPH] WARNING: JSON appears incomplete. Attempting to fix...")
+                    try:
+                        open_brackets = response_text.count('[')
+                        close_brackets = response_text.count(']')
+                        if open_brackets > close_brackets:
+                            fixed_text = response_text + '\n' + ']' * (open_brackets - close_brackets)
+                            method_graph = json.loads(fixed_text)
+                            if isinstance(method_graph, list):
+                                print(f"[GRAPH] Successfully parsed {len(method_graph)} relationship(s) (after fixing)")
+                                return method_graph
+                    except:
+                        pass
+                
+                print(f"[GRAPH] ERROR: Failed to parse JSON response: {e}")
+                print(f"[GRAPH] Response length: {len(response_text)} characters")
+                print(f"[GRAPH] Response text (first 500 chars): {response_text[:500]}")
+                raise ValueError(f"LLM response is not valid JSON: {e}")
+
+        except Exception as e:
+            print(f"[GRAPH] ERROR: Failed to get response from LLM: {e}")
+            raise
+
+    def find_relevant_methods(
+        self,
+        concept_name: str,
+        project_index: Dict[str, Any],
+        method_graph: List[Dict[str, Any]]
+    ) -> Dict[str, Any]:
+        """
+        Find methods and files relevant for analyzing a specific security concept.
+
+        Args:
+            concept_name: Name of the security concept (without extension)
+            project_index: Project index dictionary
+            method_graph: Method relationship graph
+
+        Returns:
+            Dictionary with relevant methods and their relationships
+        """
+        # Read concept file
+        concepts = self.get_all_concept_files(concept_name)
+        if not concepts:
+            raise FileNotFoundError(f"Concept file not found: {concept_name}")
+        
+        concept_name_found, concept_path = concepts[0]
+        concept_content = self.read_concept_file(concept_path)
+
+        # Convert project_index and method_graph to JSON strings
+        index_json = json.dumps(project_index, indent=2)
+        graph_json = json.dumps(method_graph, indent=2)
+
+        user_prompt = f"""SECURITY_CONCEPT: {concept_name_found}
+
+CONCEPT_DOCUMENTATION:
+
+{concept_content}
+
+PROJECT_INDEX:
+
+{index_json}
+
+CALL_GRAPH:
+
+{graph_json}
+
+TASK:
+
+Identify which methods and files are relevant for analyzing
+security issues related to {concept_name_found}.
+
+Use the concept documentation above to understand what security issues to look for.
+
+Return JSON:
+
+{{
+  "relevant_methods": [
+    {{
+      "method": "withdraw",
+      "file": "src/lib.rs",
+      "reason": "...",
+      "must_include": [
+        {{ "method": "on_withdraw_complete", "file": "src/callbacks.rs" }}
+      ]
+    }}
+  ]
+}}
+"""
+
+        system_prompt = """SYSTEM:
+
+You are selecting relevant code for a focused security analysis.
+
+Be conservative: include more rather than less.
+"""
+
+        # Send request to LLM
+        print(f"[RELEVANCE] Finding relevant methods for concept: {concept_name_found}...")
+        try:
+            response = self.client.chat.completions.create(
+                model="accounts/fireworks/models/llama4-maverick-instruct-basic",
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_prompt}
+                ],
+                temperature=0.2,
+                top_p=0.9,
+                presence_penalty=0.0,
+                max_tokens=5000,  # Maximum allowed without streaming
+            )
+
+            response_text = response.choices[0].message.content.strip()
+            
+            # Check if response was truncated
+            finish_reason = response.choices[0].finish_reason
+            if finish_reason == "length":
+                print("[RELEVANCE] WARNING: Response was truncated. Attempting to parse partial JSON...")
+            
+            # Try to extract JSON from response
+            # Remove markdown code blocks if present
+            if "```json" in response_text:
+                response_text = response_text.split("```json")[1].split("```")[0].strip()
+            elif "```" in response_text:
+                response_text = response_text.split("```")[1].split("```")[0].strip()
+
+            # Parse JSON
+            try:
+                relevant_methods = json.loads(response_text)
+                if not isinstance(relevant_methods, dict):
+                    raise ValueError("Response is not a JSON object")
+                print("[RELEVANCE] Successfully found relevant methods")
+                return relevant_methods
+            except json.JSONDecodeError as e:
+                # Try to fix incomplete JSON
+                if "Unterminated string" in str(e) or "Expecting" in str(e):
+                    print("[RELEVANCE] WARNING: JSON appears incomplete. Attempting to fix...")
+                    try:
+                        open_braces = response_text.count('{')
+                        close_braces = response_text.count('}')
+                        if open_braces > close_braces:
+                            fixed_text = response_text + '\n' + '}' * (open_braces - close_braces)
+                            relevant_methods = json.loads(fixed_text)
+                            if isinstance(relevant_methods, dict):
+                                print("[RELEVANCE] Successfully found relevant methods (after fixing)")
+                                return relevant_methods
+                    except:
+                        pass
+                
+                print(f"[RELEVANCE] ERROR: Failed to parse JSON response: {e}")
+                print(f"[RELEVANCE] Response length: {len(response_text)} characters")
+                print(f"[RELEVANCE] Response text (first 500 chars): {response_text[:500]}")
+                raise ValueError(f"LLM response is not valid JSON: {e}")
+
+        except Exception as e:
+            print(f"[RELEVANCE] ERROR: Failed to get response from LLM: {e}")
+            raise
+
+    def audit_relevant_methods(
+        self,
+        concept_name: str,
+        relevant_methods: Dict[str, Any],
+        project_dir: str
+    ) -> List[Dict[str, Any]]:
+        """
+        Audit relevant methods for security issues based on a specific concept.
+
+        Args:
+            concept_name: Name of the security concept (without extension)
+            relevant_methods: Dictionary with relevant methods from find_relevant_methods
+            project_dir: Path to the project directory
+
+        Returns:
+            List of security issues found
+        """
+        # Read concept file
+        concepts = self.get_all_concept_files(concept_name)
+        if not concepts:
+            raise FileNotFoundError(f"Concept file not found: {concept_name}")
+        
+        concept_name_found, concept_path = concepts[0]
+        concept_content = self.read_concept_file(concept_path)
+
+        # Extract unique files from relevant_methods
+        files_to_read = set()
+        if "relevant_methods" in relevant_methods:
+            for method_info in relevant_methods["relevant_methods"]:
+                if "file" in method_info:
+                    files_to_read.add(method_info["file"])
+                # Also include must_include files
+                if "must_include" in method_info:
+                    for must_include in method_info["must_include"]:
+                        if "file" in must_include:
+                            files_to_read.add(must_include["file"])
+
+        # Read only relevant files
+        files_content = {}
+        for rel_path in files_to_read:
+            # Normalize the path - remove leading slashes and normalize separators
+            rel_path_normalized = rel_path.lstrip('/').replace('\\', '/')
+            
+            # Check if project_dir ends with a directory that's also in rel_path
+            # For example: project_dir = ".../metapool/src", rel_path = "src/lib.rs"
+            # We should use "lib.rs" instead
+            project_dir_basename = os.path.basename(os.path.normpath(project_dir))
+            if rel_path_normalized.startswith(project_dir_basename + '/'):
+                rel_path_normalized = rel_path_normalized[len(project_dir_basename) + 1:]
+            
+            # Also try without the first directory component if it matches project_dir basename
+            # For example: if rel_path = "src/lib.rs" and project_dir ends with "src", try "lib.rs"
+            path_parts = rel_path_normalized.split('/')
+            if len(path_parts) > 1 and path_parts[0] == project_dir_basename:
+                rel_path_without_prefix = '/'.join(path_parts[1:])
+            else:
+                rel_path_without_prefix = None
+            
+            # Try multiple path combinations
+            possible_paths = []
+            
+            # Try with normalized path
+            possible_paths.append(os.path.join(project_dir, rel_path_normalized))
+            
+            # Try without prefix if applicable
+            if rel_path_without_prefix:
+                possible_paths.append(os.path.join(project_dir, rel_path_without_prefix))
+            
+            # Try original path
+            possible_paths.append(os.path.join(project_dir, rel_path))
+            
+            # Also try if rel_path is already absolute
+            if os.path.isabs(rel_path):
+                possible_paths.insert(0, rel_path)
+            
+            # Try to find file by checking each possible path
+            found_path = None
+            for path in possible_paths:
+                if os.path.exists(path) and os.path.isfile(path):
+                    found_path = path
+                    break
+            
+            # If not found, search recursively in project_dir by filename
+            if not found_path:
+                filename = os.path.basename(rel_path_normalized)
+                for root, dirs, files in os.walk(project_dir):
+                    # Skip target directory
+                    if 'target' in root:
+                        continue
+                    if filename in files:
+                        found_path = os.path.join(root, filename)
+                        break
+            
+            if found_path:
+                try:
+                    with open(found_path, 'r', encoding='utf-8') as f:
+                        files_content[rel_path] = f.read()
+                except Exception as e:
+                    print(f"Warning: Could not read {found_path}: {e}")
+            else:
+                print(f"Warning: File not found: {rel_path}")
+                print(f"  Searched in: {project_dir}")
+                print(f"  Tried paths: {', '.join(possible_paths[:3])}")
+
+        # Build files section
+        files_section = ""
+        for rel_path, content in files_content.items():
+            files_section += f"---\nFILE: {rel_path}\n\nCODE:\n\n{content}\n\n"
+
+        # Convert relevant_methods to JSON string
+        relevant_json = json.dumps(relevant_methods, indent=2)
+
+        user_prompt = f"""SECURITY_CONCEPT: {concept_name_found}
+
+RELEVANT_METHODS:
+
+{relevant_json}
+
+SECURITY_DOCUMENTATION:
+
+{concept_content}
+
+FILES:
+
+{files_section}TASK:
+
+Analyze the combined behavior of these methods.
+
+For each issue found, return:
+
+{{
+  "method": "...",
+  "file": "...",
+  "line_number": ...,
+  "issue_description": "...",
+  "recommendation": "..."
+}}
+
+If no issues are found:
+- Explicitly explain why the combined behavior is safe.
+"""
+
+        system_prompt = """SYSTEM:
+
+You are a NEAR Protocol smart contract security auditor.
+
+You MUST analyze interactions across multiple files.
+
+You MUST consider async boundaries and callbacks.
+
+Do NOT analyze unrelated code.
+"""
+
+        # Send request to LLM
+        print(f"[AUDIT] Auditing relevant methods for concept: {concept_name_found}...")
+        try:
+            response = self.client.chat.completions.create(
+                model="accounts/fireworks/models/llama4-maverick-instruct-basic",
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_prompt}
+                ],
+                temperature=0.2,
+                top_p=0.9,
+                presence_penalty=0.0,
+                max_tokens=5000,  # Maximum allowed without streaming
+            )
+
+            response_text = response.choices[0].message.content.strip()
+            
+            # Check if response was truncated
+            finish_reason = response.choices[0].finish_reason
+            if finish_reason == "length":
+                print("[AUDIT] WARNING: Response was truncated. Attempting to parse partial JSON...")
+            
+            # Try to extract JSON from response
+            # Remove markdown code blocks if present
+            if "```json" in response_text:
+                response_text = response_text.split("```json")[1].split("```")[0].strip()
+            elif "```" in response_text:
+                response_text = response_text.split("```")[1].split("```")[0].strip()
+
+            # Parse JSON
+            try:
+                # Try to parse as array of issues
+                issues = json.loads(response_text)
+                if isinstance(issues, list):
+                    # Filter out empty lists or non-issue items
+                    valid_issues = []
+                    for item in issues:
+                        if isinstance(item, dict) and any(key in item for key in ["method", "line_number", "issue_description"]):
+                            valid_issues.append(item)
+                    if valid_issues:
+                        print(f"[AUDIT] Successfully found {len(valid_issues)} issue(s)")
+                        return valid_issues
+                    else:
+                        print("[AUDIT] No security issues found - code is safe")
+                        return []
+                elif isinstance(issues, dict):
+                    # If it's a dict, check for common keys
+                    if "issues" in issues:
+                        issues_list = issues["issues"]
+                        if isinstance(issues_list, list) and len(issues_list) > 0:
+                            print(f"[AUDIT] Successfully found {len(issues_list)} issue(s)")
+                            return issues_list
+                        else:
+                            print("[AUDIT] No security issues found - code is safe")
+                            return []
+                    # Check for "no_issues" or "safe" indicators
+                    elif "no_issues" in issues:
+                        print("[AUDIT] No security issues found - code is safe")
+                        return []
+                    elif "message" in issues and isinstance(issues["message"], str):
+                        message_lower = issues["message"].lower()
+                        if "no issues" in message_lower or "safe" in message_lower:
+                            print("[AUDIT] No security issues found - code is safe")
+                            return []
+                    # Check if it's a single issue object
+                    elif any(key in issues for key in ["method", "line_number", "issue_description"]):
+                        print("[AUDIT] Successfully found 1 issue")
+                        return [issues]
+                    else:
+                        # Unknown dict format, treat as no issues
+                        print("[AUDIT] No security issues found - code is safe")
+                        return []
+                else:
+                    raise ValueError("Response is not a JSON array or object")
+            except json.JSONDecodeError as e:
+                # If JSON parsing fails, check if it's a text explanation
+                if "no issues" in response_text.lower() or "safe" in response_text.lower():
+                    print("[AUDIT] No security issues found - code is safe")
+                    return []
+                print(f"[AUDIT] ERROR: Failed to parse JSON response: {e}")
+                print(f"[AUDIT] Response text: {response_text[:500]}")
+                raise ValueError(f"LLM response is not valid JSON: {e}")
+
+        except Exception as e:
+            print(f"[AUDIT] ERROR: Failed to get response from LLM: {e}")
+            raise

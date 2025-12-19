@@ -140,6 +140,9 @@ cython_debug/
 # ChromaDB vector store (runtime data)
 vs/chroma/
 
+# Audit results
+audits/
+
 # API keys and secrets (if any .env files exist)
 .env.local
 .env.*.local

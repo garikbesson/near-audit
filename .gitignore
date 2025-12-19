@@ -143,6 +143,10 @@ vs/chroma/
 # Audit results
 audits/
 
+# Benchmark results
+benchmark/benchmark_results.json
+benchmark/dataset/temp_*/
+
 # API keys and secrets (if any .env files exist)
 .env.local
 .env.*.local

@@ -1,0 +1,209 @@
+{
+  "dataset_version": "1.0",
+  "description": "Security vulnerability examples for benchmarking NEAR smart contract audit tools",
+  "examples": [
+    {
+      "file": "private_methods_vulnerable.rs",
+      "concept": "private_methods",
+      "expected_vulnerabilities": [
+        {
+          "type": "PM-1",
+          "method": "internal_update_balance",
+          "line": "~20",
+          "description": "Method with 'internal' in name but publicly accessible"
+        },
+        {
+          "type": "PM-2",
+          "method": "calculate_helper",
+          "line": "~26",
+          "description": "Method with 'helper' in name but publicly accessible"
+        },
+        {
+          "type": "PM-3",
+          "method": "callback_after_staking",
+          "line": "~32",
+          "description": "Callback method without #[private] decorator"
+        },
+        {
+          "type": "PM-3",
+          "method": "on_transfer_complete",
+          "line": "~44",
+          "description": "Method with 'on_' prefix but unprotected"
+        },
+        {
+          "type": "PM-3",
+          "method": "after_deposit",
+          "line": "~52",
+          "description": "Method with 'after_' prefix but unprotected"
+        },
+        {
+          "type": "PM-4",
+          "method": "callback_after_staking",
+          "line": "~32",
+          "description": "Callback called via .then() but not protected"
+        },
+        {
+          "type": "PM-5",
+          "method": "internal_process",
+          "line": "~60",
+          "description": "Uses manual predecessor check instead of #[private]"
+        }
+      ],
+      "should_not_flag": [
+        {
+          "method": "internal_helper",
+          "reason": "In undecorated impl Contract {} block - not part of public interface"
+        },
+        {
+          "method": "helper_calculate",
+          "reason": "In undecorated impl Contract {} block - not part of public interface"
+        }
+      ]
+    },
+    {
+      "file": "reentrancy_vulnerable.rs",
+      "concept": "reentrancy",
+      "expected_vulnerabilities": [
+        {
+          "type": "RE-1",
+          "method": "deposit_and_stake",
+          "line": "~22",
+          "description": "State updated before external call - allows reentrancy"
+        },
+        {
+          "type": "RE-2",
+          "method": "withdraw",
+          "line": "~40",
+          "description": "Can be called between deposit_and_stake and callback"
+        }
+      ]
+    },
+    {
+      "file": "callbacks_vulnerable.rs",
+      "concept": "callbacks",
+      "expected_vulnerabilities": [
+        {
+          "type": "CB-1",
+          "method": "callback_after_stake",
+          "line": "~25",
+          "description": "Callback without #[private] decorator"
+        },
+        {
+          "type": "CB-2",
+          "method": "callback_without_refund",
+          "line": "~35",
+          "description": "Callback doesn't refund user if external call fails"
+        }
+      ]
+    },
+    {
+      "file": "one_yocto_vulnerable.rs",
+      "concept": "one_yocto",
+      "expected_vulnerabilities": [
+        {
+          "type": "OY-1",
+          "method": "transfer_nft",
+          "line": "~18",
+          "description": "Missing 1 yoctoNEAR check - Function Call keys can transfer"
+        },
+        {
+          "type": "OY-2",
+          "method": "transfer_ft",
+          "line": "~26",
+          "description": "Missing 1 yoctoNEAR check"
+        },
+        {
+          "type": "OY-3",
+          "method": "transfer_large_amount",
+          "line": "~33",
+          "description": "Missing 1 yoctoNEAR check"
+        }
+      ]
+    },
+    {
+      "file": "random_vulnerable.rs",
+      "concept": "random",
+      "expected_vulnerabilities": [
+        {
+          "type": "RN-1",
+          "method": "guess_number",
+          "line": "~20",
+          "description": "Gaming the input attack - user input and random seed in same block"
+        },
+        {
+          "type": "RN-2",
+          "method": "bet_heads_or_tails + resolve_bet",
+          "line": "~38, ~45",
+          "description": "Refusing to mine attack - validator can skip losing blocks"
+        }
+      ]
+    },
+    {
+      "file": "frontrunning_vulnerable.rs",
+      "concept": "frontrunning",
+      "expected_vulnerabilities": [
+        {
+          "type": "FR-1",
+          "method": "solve_puzzle",
+          "line": "~20",
+          "description": "First-come-first-served pattern vulnerable to frontrunning"
+        },
+        {
+          "type": "FR-2",
+          "method": "place_bid",
+          "line": "~35",
+          "description": "Auction without commit-reveal scheme"
+        }
+      ]
+    },
+    {
+      "file": "sybil_vulnerable.rs",
+      "concept": "sybil",
+      "expected_vulnerabilities": [
+        {
+          "type": "SY-1",
+          "method": "vote",
+          "line": "~22",
+          "description": "One-account-one-vote without identity verification"
+        },
+        {
+          "type": "SY-2",
+          "method": "claim_airdrop",
+          "line": "~36",
+          "description": "Airdrop without Sybil protection"
+        },
+        {
+          "type": "SY-3",
+          "method": "rate_user",
+          "line": "~45",
+          "description": "Reputation system without Sybil protection"
+        }
+      ]
+    },
+    {
+      "file": "storage_vulnerable.rs",
+      "concept": "storage",
+      "expected_vulnerabilities": [
+        {
+          "type": "ST-1",
+          "method": "add_message",
+          "line": "~20",
+          "description": "Storage cost not covered by user - contract pays"
+        },
+        {
+          "type": "ST-2",
+          "method": "store_user_data",
+          "line": "~30",
+          "description": "User data storage without deposit requirement"
+        },
+        {
+          "type": "ST-3",
+          "method": "add_item",
+          "line": "~38",
+          "description": "Collection growth attack - no storage cost check"
+        }
+      ]
+    }
+  ]
+}
+

@@ -1,18 +1,18 @@
-use near_sdk::borsh::{self, BorshDeserialize, BorshSerialize};
-use near_sdk::collections::UnorderedMap;
-use near_sdk::{env, near, AccountId};
+use near_sdk::store::IterableMap;
+use near_sdk::{env, near, AccountId, NearToken, PanicOnDefault, Promise};
 
 #[near(contract_state)]
-#[derive(BorshDeserialize, BorshSerialize)]
+#[derive(PanicOnDefault)]
 pub struct Contract {
-    tokens: UnorderedMap<AccountId, Vec<String>>,
+    tokens: IterableMap<AccountId, Vec<String>>,
 }
 
 #[near]
 impl Contract {
+    #[init]
     pub fn new() -> Self {
         Self {
-            tokens: UnorderedMap::new(b"t".to_vec()),
+            tokens: IterableMap::new(b"t".to_vec()),
         }
     }
 
@@ -28,7 +28,7 @@ impl Contract {
     }
 
     // ❌ VULNERABILITY: Fungible token transfer without 1 yoctoNEAR check
-    pub fn transfer_ft(&mut self, amount: u128, receiver_id: AccountId) {
+    pub fn transfer_ft(&mut self, amount: NearToken, receiver_id: AccountId) {
         // Missing: assert!(env::attached_deposit() >= 1, "User verification required");
 
         let sender = env::predecessor_account_id();
@@ -36,31 +36,31 @@ impl Contract {
     }
 
     // ❌ VULNERABILITY: Large NEAR transfer without 1 yoctoNEAR check
-    pub fn transfer_large_amount(&mut self, receiver_id: AccountId, amount: u128) {
+    pub fn transfer_large_amount(&mut self, receiver_id: AccountId, amount: NearToken) {
         // Missing: assert!(env::attached_deposit() >= 1, "User verification required");
 
         let sender = env::predecessor_account_id();
         let balance = self.get_balance(&sender);
         assert!(balance >= amount, "Insufficient balance");
 
-        Promise::new(receiver_id).transfer(amount);
+        let _ = Promise::new(receiver_id).transfer(amount);
     }
 
     fn get_token_owner(&self, token_id: &String) -> AccountId {
         // Implementation omitted
-        AccountId::new_unchecked("owner.near".to_string())
+        "owner.near".parse().unwrap()
     }
 
     fn transfer_token(&mut self, token_id: String, receiver_id: AccountId) {
         // Implementation omitted
     }
 
-    fn internal_transfer(&mut self, sender: AccountId, receiver: AccountId, amount: u128) {
+    fn internal_transfer(&mut self, sender: AccountId, receiver: AccountId, amount: NearToken) {
         // Implementation omitted
     }
 
-    fn get_balance(&self, account: &AccountId) -> u128 {
+    fn get_balance(&self, account: &AccountId) -> NearToken {
         // Implementation omitted
-        0
+        NearToken::from_near(0)
     }
 }

@@ -25,48 +25,43 @@ def load_metadata() -> Dict[str, Any]:
         return json.load(f)
 
 
-def run_audit(example_file: str, concept_name: str) -> Dict[str, Any]:
-    """Run audit on a single example file."""
-    example_path = Path(__file__).parent / "dataset" / example_file
+def run_audit(project_name: str, concept_name: str) -> Dict[str, Any]:
+    """Run audit on a single project directory."""
+    project_path = Path(__file__).parent / "dataset" / project_name
     
-    if not example_path.exists():
+    if not project_path.exists():
         return {
             "success": False,
-            "error": f"File not found: {example_path}"
+            "error": f"Project directory not found: {project_path}"
         }
     
-    # Create a temporary project directory with the example file
-    project_dir = example_path.parent / f"temp_{example_file.replace('.rs', '')}"
-    project_dir.mkdir(exist_ok=True)
-    
-    # Copy file to project directory as src/lib.rs
-    src_dir = project_dir / "src"
-    src_dir.mkdir(exist_ok=True)
-    
-    import shutil
-    shutil.copy(example_path, src_dir / "lib.rs")
+    if not project_path.is_dir():
+        return {
+            "success": False,
+            "error": f"Expected directory, got file: {project_path}"
+        }
     
     try:
         auditor = CodeAuditor()
         
         # Step 1: Index project
-        print(f"[{example_file}] Step 1: Indexing project...")
-        project_index = auditor.index_project(str(project_dir))
+        print(f"[{project_name}] Step 1: Indexing project...")
+        project_index = auditor.index_project(str(project_path))
         
         # Step 2: Build method graph
-        print(f"[{example_file}] Step 2: Building method graph...")
-        method_graph = auditor.build_method_graph(str(project_dir), project_index)
+        print(f"[{project_name}] Step 2: Building method graph...")
+        method_graph = auditor.build_method_graph(str(project_path), project_index)
         
         # Step 3: Find relevant methods
-        print(f"[{example_file}] Step 3: Finding relevant methods...")
+        print(f"[{project_name}] Step 3: Finding relevant methods...")
         relevant_methods = auditor.find_relevant_methods(
             concept_name, project_index, method_graph
         )
         
         # Step 4: Audit relevant methods
-        print(f"[{example_file}] Step 4: Auditing relevant methods...")
+        print(f"[{project_name}] Step 4: Auditing relevant methods...")
         audit_results = auditor.audit_relevant_methods(
-            concept_name, relevant_methods, str(project_dir)
+            concept_name, relevant_methods, str(project_path)
         )
         
         return {
@@ -81,10 +76,6 @@ def run_audit(example_file: str, concept_name: str) -> Dict[str, Any]:
             "success": False,
             "error": str(e)
         }
-    finally:
-        # Cleanup
-        if project_dir.exists():
-            shutil.rmtree(project_dir)
 
 
 def compare_results(
@@ -92,20 +83,26 @@ def compare_results(
     expected_vulnerabilities: List[Dict[str, Any]]
 ) -> Dict[str, Any]:
     """Compare audit results with expected vulnerabilities."""
-    detected_methods = set()
+    # Create sets of (file, method) tuples for more precise matching
+    detected_issues = set()
     
     for result in audit_results:
         if isinstance(result, dict) and "method" in result:
-            detected_methods.add(result["method"])
+            file_path = result.get("file", "unknown")
+            method = result["method"]
+            detected_issues.add((file_path, method))
     
-    expected_methods = {vuln["method"] for vuln in expected_vulnerabilities}
+    expected_issues = {
+        (vuln.get("file", "unknown"), vuln["method"])
+        for vuln in expected_vulnerabilities
+    }
     
-    true_positives = detected_methods & expected_methods
-    false_positives = detected_methods - expected_methods
-    false_negatives = expected_methods - detected_methods
+    true_positives = detected_issues & expected_issues
+    false_positives = detected_issues - expected_issues
+    false_negatives = expected_issues - detected_issues
     
-    precision = len(true_positives) / len(detected_methods) if detected_methods else 0
-    recall = len(true_positives) / len(expected_methods) if expected_methods else 0
+    precision = len(true_positives) / len(detected_issues) if detected_issues else 0
+    recall = len(true_positives) / len(expected_issues) if expected_issues else 0
     f1_score = (
         2 * precision * recall / (precision + recall)
         if (precision + recall) > 0
@@ -113,14 +110,14 @@ def compare_results(
     )
     
     return {
-        "true_positives": list(true_positives),
-        "false_positives": list(false_positives),
-        "false_negatives": list(false_negatives),
+        "true_positives": [{"file": f, "method": m} for f, m in true_positives],
+        "false_positives": [{"file": f, "method": m} for f, m in false_positives],
+        "false_negatives": [{"file": f, "method": m} for f, m in false_negatives],
         "precision": precision,
         "recall": recall,
         "f1_score": f1_score,
-        "total_detected": len(detected_methods),
-        "total_expected": len(expected_methods),
+        "total_detected": len(detected_issues),
+        "total_expected": len(expected_issues),
     }
 
 
@@ -135,23 +132,29 @@ def main():
     print()
     
     for example in metadata["examples"]:
-        example_file = example["file"]
+        project_name = example["project"]
         concept_name = example["concept"]
-        expected_vulns = example.get("expected_vulnerabilities", [])
+        all_expected_vulns = example.get("expected_vulnerabilities", [])
+        
+        # Filter only active vulnerabilities (active: true or missing active field for backward compatibility)
+        expected_vulns = [
+            vuln for vuln in all_expected_vulns
+            if vuln.get("active", True)  # Default to True if "active" field is missing
+        ]
         
         print(f"\n{'=' * 80}")
-        print(f"Testing: {example_file}")
+        print(f"Testing: {project_name}")
         print(f"Concept: {concept_name}")
-        print(f"Expected vulnerabilities: {len(expected_vulns)}")
+        print(f"Expected vulnerabilities (active): {len(expected_vulns)} (total: {len(all_expected_vulns)})")
         print(f"{'=' * 80}\n")
         
-        audit_output = run_audit(example_file, concept_name)
+        audit_output = run_audit(project_name, concept_name)
         
         if audit_output["success"]:
             audit_results = audit_output.get("audit_results", [])
             comparison = compare_results(audit_results, expected_vulns)
             
-            results[example_file] = {
+            results[project_name] = {
                 "success": True,
                 "concept": concept_name,
                 "audit_results_count": len(audit_results),
@@ -160,7 +163,7 @@ def main():
                 "detected_issues": audit_results,
             }
             
-            print(f"\nResults for {example_file}:")
+            print(f"\nResults for {project_name}:")
             print(f"  Precision: {comparison['precision']:.2%}")
             print(f"  Recall: {comparison['recall']:.2%}")
             print(f"  F1 Score: {comparison['f1_score']:.2%}")
@@ -173,7 +176,7 @@ def main():
             if comparison["false_negatives"]:
                 print(f"  False Negatives: {comparison['false_negatives']}")
         else:
-            results[example_file] = {
+            results[project_name] = {
                 "success": False,
                 "error": audit_output.get("error", "Unknown error"),
             }

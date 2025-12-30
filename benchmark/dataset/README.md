@@ -4,11 +4,13 @@ This directory contains vulnerable code examples for testing and measuring the e
 
 ## Structure
 
-Each file contains a complete Rust smart contract with intentional security vulnerabilities. The files are named as `{concept_name}_vulnerable.rs` where `concept_name` corresponds to a security concept from the `concepts/` directory.
+All examples are full project directories (`{concept_name}_vulnerable/`) - complete NEAR smart contract projects with `Cargo.toml`, `src/`, etc. This ensures that all examples can be compiled and deployed, verifying their correctness.
+
+Each example contains intentional security vulnerabilities. The names correspond to security concepts from the `concepts/` directory.
 
 ## Files
 
-### 1. `private_methods_vulnerable.rs`
+### 1. `private_methods_vulnerable/`
 **Concept**: Private methods security
 
 **Expected Vulnerabilities**:
@@ -23,7 +25,7 @@ Each file contains a complete Rust smart contract with intentional security vuln
 **Should NOT flag**:
 - Methods in undecorated `impl Contract {}` block (`internal_helper`, `helper_calculate`)
 
-### 2. `reentrancy_vulnerable.rs`
+### 2. `reentrancy_vulnerable/`
 **Concept**: Reentrancy attacks
 
 **Expected Vulnerabilities**:
@@ -31,14 +33,16 @@ Each file contains a complete Rust smart contract with intentional security vuln
 - `withdraw` can be called between `deposit_and_stake` and its callback
 - Balance updated immediately, allowing reentrancy attack
 
-### 3. `callbacks_vulnerable.rs`
+### 3. `callbacks_vulnerable/`
 **Concept**: Callback security
+
+**Structure**: Full NEAR smart contract project (similar to `hello-near/`)
 
 **Expected Vulnerabilities**:
 - `callback_after_stake` - callback without `#[private]` decorator
 - `callback_without_refund` - callback doesn't refund user if external call fails
 
-### 4. `one_yocto_vulnerable.rs`
+### 4. `one_yocto_vulnerable/`
 **Concept**: 1 yoctoNEAR verification
 
 **Expected Vulnerabilities**:
@@ -46,21 +50,21 @@ Each file contains a complete Rust smart contract with intentional security vuln
 - `transfer_ft` - missing 1 yoctoNEAR check
 - `transfer_large_amount` - missing 1 yoctoNEAR check
 
-### 5. `random_vulnerable.rs`
+### 5. `random_vulnerable/`
 **Concept**: Random number generation security
 
 **Expected Vulnerabilities**:
 - `guess_number` - "gaming the input" attack (user input and random seed in same block)
 - `bet_heads_or_tails` + `resolve_bet` - "refusing to mine" attack (validator can skip losing blocks)
 
-### 6. `frontrunning_vulnerable.rs`
+### 6. `frontrunning_vulnerable/`
 **Concept**: Frontrunning attacks
 
 **Expected Vulnerabilities**:
 - `solve_puzzle` - first-come-first-served pattern vulnerable to frontrunning
 - `place_bid` - auction without commit-reveal scheme, validator can see bids
 
-### 7. `sybil_vulnerable.rs`
+### 7. `sybil_vulnerable/`
 **Concept**: Sybil attacks
 
 **Expected Vulnerabilities**:
@@ -68,7 +72,7 @@ Each file contains a complete Rust smart contract with intentional security vuln
 - `claim_airdrop` - airdrop without Sybil protection
 - `rate_user` - reputation system without Sybil protection
 
-### 8. `storage_vulnerable.rs`
+### 8. `storage_vulnerable/`
 **Concept**: Storage cost attacks
 
 **Expected Vulnerabilities**:
@@ -91,10 +95,13 @@ To test the audit tool on these examples:
 
 ```bash
 # Test private methods detection
-python -m auditor.audit graph /path/to/benchmark/dataset/private_methods_vulnerable.rs --concept-name private_methods
+python -m auditor.audit graph /path/to/benchmark/dataset/private_methods_vulnerable/ --concept-name private_methods
 
 # Test reentrancy detection
-python -m auditor.audit graph /path/to/benchmark/dataset/reentrancy_vulnerable.rs --concept-name reentrancy
+python -m auditor.audit graph /path/to/benchmark/dataset/reentrancy_vulnerable/ --concept-name reentrancy
+
+# Test callbacks detection
+python -m auditor.audit graph /path/to/benchmark/dataset/callbacks_vulnerable/ --concept-name callbacks
 
 # ... and so on for each concept
 ```

@@ -3,204 +3,254 @@
   "description": "Security vulnerability examples for benchmarking NEAR smart contract audit tools",
   "examples": [
     {
-      "file": "private_methods_vulnerable.rs",
+      "project": "2. private_methods_vulnerable",
       "concept": "private_methods",
       "expected_vulnerabilities": [
         {
           "type": "PM-1",
+          "file": "src/lib.rs",
           "method": "internal_update_balance",
-          "line": "~20",
-          "description": "Method with 'internal' in name but publicly accessible"
+          "line": "~27",
+          "description": "Method with 'internal' in name but publicly accessible",
+          "active": true
         },
         {
           "type": "PM-2",
+          "file": "src/lib.rs",
           "method": "calculate_helper",
-          "line": "~26",
-          "description": "Method with 'helper' in name but publicly accessible"
+          "line": "~34",
+          "description": "Method with 'helper' in name but publicly accessible",
+          "active": false
         },
         {
           "type": "PM-3",
+          "file": "src/lib.rs",
           "method": "callback_after_staking",
           "line": "~32",
-          "description": "Callback method without #[private] decorator"
+          "description": "Callback method without #[private] decorator",
+          "active": false
         },
         {
           "type": "PM-3",
+          "file": "src/lib.rs",
           "method": "on_transfer_complete",
-          "line": "~44",
-          "description": "Method with 'on_' prefix but unprotected"
+          "line": "~40",
+          "description": "Method with 'on_' prefix but unprotected",
+          "active": false
         },
         {
           "type": "PM-3",
+          "file": "src/lib.rs",
           "method": "after_deposit",
-          "line": "~52",
-          "description": "Method with 'after_' prefix but unprotected"
+          "line": "~49",
+          "description": "Method with 'after_' prefix but unprotected",
+          "active": false
         },
         {
           "type": "PM-4",
+          "file": "src/lib.rs",
           "method": "callback_after_staking",
           "line": "~32",
-          "description": "Callback called via .then() but not protected"
+          "description": "Callback called via .then() but not protected",
+          "active": false
         },
         {
           "type": "PM-5",
+          "file": "src/lib.rs",
           "method": "internal_process",
-          "line": "~60",
-          "description": "Uses manual predecessor check instead of #[private]"
+          "line": "~62",
+          "description": "Uses manual predecessor check instead of #[private]",
+          "active": true
         }
       ],
       "should_not_flag": [
         {
+          "file": "src/lib.rs",
           "method": "internal_helper",
           "reason": "In undecorated impl Contract {} block - not part of public interface"
         },
         {
+          "file": "src/lib.rs",
           "method": "helper_calculate",
           "reason": "In undecorated impl Contract {} block - not part of public interface"
         }
       ]
     },
     {
-      "file": "reentrancy_vulnerable.rs",
+      "project": "6. reentrancy_vulnerable",
       "concept": "reentrancy",
       "expected_vulnerabilities": [
         {
           "type": "RE-1",
+          "file": "src/lib.rs",
           "method": "deposit_and_stake",
-          "line": "~22",
-          "description": "State updated before external call - allows reentrancy"
+          "line": "~27",
+          "description": "State updated before external call - allows reentrancy",
+          "active": true
         },
         {
           "type": "RE-2",
+          "file": "src/lib.rs",
           "method": "withdraw",
-          "line": "~40",
-          "description": "Can be called between deposit_and_stake and callback"
+          "line": "~74",
+          "description": "Can be called between deposit_and_stake and callback",
+          "active": true
         }
       ]
     },
     {
-      "file": "callbacks_vulnerable.rs",
+      "project": "0. callbacks_vulnerable",
       "concept": "callbacks",
       "expected_vulnerabilities": [
         {
           "type": "CB-1",
+          "file": "src/lib.rs",
           "method": "callback_after_stake",
-          "line": "~25",
-          "description": "Callback without #[private] decorator"
+          "line": "~47",
+          "description": "Callback without #[private] decorator",
+          "active": true
         },
         {
           "type": "CB-2",
+          "file": "src/lib.rs",
           "method": "callback_without_refund",
-          "line": "~35",
-          "description": "Callback doesn't refund user if external call fails"
+          "line": "~54",
+          "description": "Callback doesn't refund user if external call fails",
+          "active": false
         }
       ]
     },
     {
-      "file": "one_yocto_vulnerable.rs",
+      "project": "1. one_yocto_vulnerable",
       "concept": "one_yocto",
       "expected_vulnerabilities": [
         {
           "type": "OY-1",
+          "file": "src/lib.rs",
           "method": "transfer_nft",
-          "line": "~18",
-          "description": "Missing 1 yoctoNEAR check - Function Call keys can transfer"
+          "line": "~21",
+          "description": "Missing 1 yoctoNEAR check - Function Call keys can transfer",
+          "active": true
         },
         {
           "type": "OY-2",
+          "file": "src/lib.rs",
           "method": "transfer_ft",
-          "line": "~26",
-          "description": "Missing 1 yoctoNEAR check"
+          "line": "~31",
+          "description": "Missing 1 yoctoNEAR check",
+          "active": true
         },
         {
           "type": "OY-3",
+          "file": "src/lib.rs",
           "method": "transfer_large_amount",
-          "line": "~33",
-          "description": "Missing 1 yoctoNEAR check"
+          "line": "~39",
+          "description": "Missing 1 yoctoNEAR check",
+          "active": true
         }
       ]
     },
     {
-      "file": "random_vulnerable.rs",
+      "project": "4. random_vulnerable",
       "concept": "random",
       "expected_vulnerabilities": [
         {
           "type": "RN-1",
+          "file": "src/lib.rs",
           "method": "guess_number",
-          "line": "~20",
-          "description": "Gaming the input attack - user input and random seed in same block"
+          "line": "~23",
+          "description": "Gaming the input attack - user input and random seed in same block",
+          "active": true
         },
         {
           "type": "RN-2",
+          "file": "src/lib.rs",
           "method": "bet_heads_or_tails + resolve_bet",
-          "line": "~38, ~45",
-          "description": "Refusing to mine attack - validator can skip losing blocks"
+          "line": "~42, ~50",
+          "description": "Refusing to mine attack - validator can skip losing blocks",
+          "active": false
         }
       ]
     },
     {
-      "file": "frontrunning_vulnerable.rs",
+      "project": "5. frontrunning_vulnerable",
       "concept": "frontrunning",
       "expected_vulnerabilities": [
         {
           "type": "FR-1",
+          "file": "src/lib.rs",
           "method": "solve_puzzle",
-          "line": "~20",
-          "description": "First-come-first-served pattern vulnerable to frontrunning"
+          "line": "~23",
+          "description": "First-come-first-served pattern vulnerable to frontrunning",
+          "active": true
         },
         {
           "type": "FR-2",
+          "file": "src/lib.rs",
           "method": "place_bid",
-          "line": "~35",
-          "description": "Auction without commit-reveal scheme"
+          "line": "~47",
+          "description": "Auction without commit-reveal scheme",
+          "active": false
         }
       ]
     },
     {
-      "file": "sybil_vulnerable.rs",
+      "project": "7. sybil_vulnerable",
       "concept": "sybil",
       "expected_vulnerabilities": [
         {
           "type": "SY-1",
+          "file": "src/lib.rs",
           "method": "vote",
-          "line": "~22",
-          "description": "One-account-one-vote without identity verification"
+          "line": "~24",
+          "description": "One-account-one-vote without identity verification",
+          "active": true
         },
         {
           "type": "SY-2",
+          "file": "src/lib.rs",
           "method": "claim_airdrop",
-          "line": "~36",
-          "description": "Airdrop without Sybil protection"
+          "line": "~42",
+          "description": "Airdrop without Sybil protection",
+          "active": false
         },
         {
           "type": "SY-3",
+          "file": "src/lib.rs",
           "method": "rate_user",
-          "line": "~45",
-          "description": "Reputation system without Sybil protection"
+          "line": "~54",
+          "description": "Reputation system without Sybil protection",
+          "active": false
         }
       ]
     },
     {
-      "file": "storage_vulnerable.rs",
+      "project": "3. storage_vulnerable",
       "concept": "storage",
       "expected_vulnerabilities": [
         {
           "type": "ST-1",
+          "file": "src/lib.rs",
           "method": "add_message",
-          "line": "~20",
-          "description": "Storage cost not covered by user - contract pays"
+          "line": "~24",
+          "description": "Storage cost not covered by user - contract pays",
+          "active": true
         },
         {
           "type": "ST-2",
+          "file": "src/lib.rs",
           "method": "store_user_data",
-          "line": "~30",
-          "description": "User data storage without deposit requirement"
+          "line": "~40",
+          "description": "User data storage without deposit requirement",
+          "active": false
         },
         {
           "type": "ST-3",
+          "file": "src/lib.rs",
           "method": "add_item",
-          "line": "~38",
-          "description": "Collection growth attack - no storage cost check"
+          "line": "~50",
+          "description": "Collection growth attack - no storage cost check",
+          "active": false
         }
       ]
     }

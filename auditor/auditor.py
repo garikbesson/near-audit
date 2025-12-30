@@ -332,13 +332,22 @@ Return ONLY valid JSON array, no additional text or explanation."""
                 temperature=0.2,  # Lower temperature for consistent analysis
                 top_p=0.9,
                 presence_penalty=0.0,
-                max_tokens=5000,  # Maximum allowed without streaming
+                max_tokens=5000,  # Maximum allowed with streaming
+                stream=True,
             )
 
-            response_text = response.choices[0].message.content.strip()
+            # Collect streaming response
+            response_text = ""
+            finish_reason = None
+            for chunk in response:
+                if chunk.choices[0].delta.content:
+                    response_text += chunk.choices[0].delta.content
+                if chunk.choices[0].finish_reason:
+                    finish_reason = chunk.choices[0].finish_reason
+            
+            response_text = response_text.strip()
             
             # Check if response was truncated
-            finish_reason = response.choices[0].finish_reason
             if finish_reason == "length":
                 print("[PASS 1] WARNING: Response was truncated. Results may be incomplete.")
             
@@ -570,13 +579,22 @@ Return ONLY valid JSON, no additional text."""
                 temperature=0.2,  # Lower temperature for consistent analysis
                 top_p=0.9,
                 presence_penalty=0.0,
-                max_tokens=5000,  # Maximum allowed without streaming
+                max_tokens=5000,  # Maximum allowed with streaming
+                stream=True,
             )
 
-            response_text = response.choices[0].message.content.strip()
+            # Collect streaming response
+            response_text = ""
+            finish_reason = None
+            for chunk in response:
+                if chunk.choices[0].delta.content:
+                    response_text += chunk.choices[0].delta.content
+                if chunk.choices[0].finish_reason:
+                    finish_reason = chunk.choices[0].finish_reason
+            
+            response_text = response_text.strip()
             
             # Check if response was truncated
-            finish_reason = response.choices[0].finish_reason
             if finish_reason == "length":
                 print(f"[PASS 2] Analysis {analysis_label}: WARNING: Response was truncated. Results may be incomplete.")
             
@@ -763,7 +781,6 @@ Return ONLY valid JSON, no additional text."""
             response_text = response.choices[0].message.content.strip()
             
             # Check if response was truncated
-            finish_reason = response.choices[0].finish_reason
             if finish_reason == "length":
                 print("[PASS 2] Self-consistency: WARNING: Response was truncated. Results may be incomplete.")
             
@@ -1250,13 +1267,28 @@ Do NOT analyze security yet.
                 temperature=0.2,
                 top_p=0.9,
                 presence_penalty=0.0,
-                max_tokens=5000,  # Maximum allowed without streaming
+                max_tokens=5000,  # Maximum allowed with streaming
+                stream=True,
             )
 
-            response_text = response.choices[0].message.content.strip()
+            # Collect streaming response
+            response_text = ""
+            finish_reason = None
+            for chunk in response:
+                if chunk.choices[0].delta.content:
+                    response_text += chunk.choices[0].delta.content
+                if chunk.choices[0].finish_reason:
+                    finish_reason = chunk.choices[0].finish_reason
+            
+            response_text = response_text.strip()
+            
+            # Log full LLM response before parsing
+            print(f"[INDEX] Full LLM response ({len(response_text)} characters):")
+            print("=" * 80)
+            print(response_text)
+            print("=" * 80)
             
             # Check if response was truncated
-            finish_reason = response.choices[0].finish_reason
             if finish_reason == "length":
                 print("[INDEX] WARNING: Response was truncated. Attempting to parse partial JSON...")
             
@@ -1406,13 +1438,28 @@ Do NOT guess.
                 temperature=0.2,
                 top_p=0.9,
                 presence_penalty=0.0,
-                max_tokens=5000,  # Maximum allowed without streaming
+                max_tokens=5000,  # Maximum allowed with streaming
+                stream=True,
             )
 
-            response_text = response.choices[0].message.content.strip()
+            # Collect streaming response
+            response_text = ""
+            finish_reason = None
+            for chunk in response:
+                if chunk.choices[0].delta.content:
+                    response_text += chunk.choices[0].delta.content
+                if chunk.choices[0].finish_reason:
+                    finish_reason = chunk.choices[0].finish_reason
+            
+            response_text = response_text.strip()
+            
+            # Log full LLM response before parsing
+            print(f"[GRAPH] Full LLM response ({len(response_text)} characters):")
+            print("=" * 80)
+            print(response_text)
+            print("=" * 80)
             
             # Check if response was truncated
-            finish_reason = response.choices[0].finish_reason
             if finish_reason == "length":
                 print("[GRAPH] WARNING: Response was truncated. Attempting to parse partial JSON...")
             
@@ -1544,13 +1591,28 @@ Be conservative: include more rather than less.
                 temperature=0.2,
                 top_p=0.9,
                 presence_penalty=0.0,
-                max_tokens=5000,  # Maximum allowed without streaming
+                max_tokens=5000,  # Maximum allowed with streaming
+                stream=True,
             )
 
-            response_text = response.choices[0].message.content.strip()
+            # Collect streaming response
+            response_text = ""
+            finish_reason = None
+            for chunk in response:
+                if chunk.choices[0].delta.content:
+                    response_text += chunk.choices[0].delta.content
+                if chunk.choices[0].finish_reason:
+                    finish_reason = chunk.choices[0].finish_reason
+            
+            response_text = response_text.strip()
+            
+            # Log full LLM response before parsing
+            print(f"[RELEVANCE] Full LLM response ({len(response_text)} characters):")
+            print("=" * 80)
+            print(response_text)
+            print("=" * 80)
             
             # Check if response was truncated
-            finish_reason = response.choices[0].finish_reason
             if finish_reason == "length":
                 print("[RELEVANCE] WARNING: Response was truncated. Attempting to parse partial JSON...")
             
@@ -1758,27 +1820,83 @@ Do NOT analyze unrelated code.
                 temperature=0.2,
                 top_p=0.9,
                 presence_penalty=0.0,
-                max_tokens=5000,  # Maximum allowed without streaming
+                max_tokens=5000,  # Maximum allowed with streaming
+                stream=True,
             )
 
-            response_text = response.choices[0].message.content.strip()
+            # Collect streaming response
+            response_text = ""
+            finish_reason = None
+            for chunk in response:
+                if chunk.choices[0].delta.content:
+                    response_text += chunk.choices[0].delta.content
+                if chunk.choices[0].finish_reason:
+                    finish_reason = chunk.choices[0].finish_reason
+            
+            response_text = response_text.strip()
+            
+            # Log full LLM response before parsing
+            print(f"[AUDIT] Full LLM response ({len(response_text)} characters):")
+            print("=" * 80)
+            print(response_text)
+            print("=" * 80)
             
             # Check if response was truncated
-            finish_reason = response.choices[0].finish_reason
             if finish_reason == "length":
                 print("[AUDIT] WARNING: Response was truncated. Attempting to parse partial JSON...")
             
-            # Try to extract JSON from response
-            # Remove markdown code blocks if present
-            if "```json" in response_text:
-                response_text = response_text.split("```json")[1].split("```")[0].strip()
-            elif "```" in response_text:
-                response_text = response_text.split("```")[1].split("```")[0].strip()
+            # Try to extract JSON from response using more robust method
+            json_str = None
+            
+            # First, try to find JSON in code blocks
+            json_match = re.search(r'```(?:json)?\s*(\[.*?\])\s*```', response_text, re.DOTALL)
+            if json_match:
+                json_str = json_match.group(1)
+                print("[AUDIT] Found JSON in code block")
+            else:
+                # Try to find JSON array - use bracket counting to get complete JSON
+                bracket_count = 0
+                start_idx = response_text.find('[')
+                if start_idx != -1:
+                    for i in range(start_idx, len(response_text)):
+                        if response_text[i] == '[':
+                            bracket_count += 1
+                        elif response_text[i] == ']':
+                            bracket_count -= 1
+                            if bracket_count == 0:
+                                json_str = response_text[start_idx:i+1]
+                                print("[AUDIT] Found JSON array in response")
+                                break
+                    else:
+                        # No matching closing bracket found - try to fix
+                        json_str = response_text[start_idx:]
+                        print("[AUDIT] No matching closing bracket, attempting to fix...")
+                else:
+                    # Try to find JSON object instead
+                    brace_count = 0
+                    start_idx = response_text.find('{')
+                    if start_idx != -1:
+                        for i in range(start_idx, len(response_text)):
+                            if response_text[i] == '{':
+                                brace_count += 1
+                            elif response_text[i] == '}':
+                                brace_count -= 1
+                                if brace_count == 0:
+                                    json_str = response_text[start_idx:i+1]
+                                    print("[AUDIT] Found JSON object in response")
+                                    break
+                        else:
+                            json_str = response_text[start_idx:]
+                            print("[AUDIT] No matching closing brace, attempting to fix...")
+                    else:
+                        # Try to parse the whole response as JSON
+                        json_str = response_text
+                        print("[AUDIT] Attempting to parse entire response as JSON")
 
             # Parse JSON
             try:
                 # Try to parse as array of issues
-                issues = json.loads(response_text)
+                issues = json.loads(json_str)
                 if isinstance(issues, list):
                     # Filter out empty lists or non-issue items
                     valid_issues = []
@@ -1821,12 +1939,62 @@ Do NOT analyze unrelated code.
                 else:
                     raise ValueError("Response is not a JSON array or object")
             except json.JSONDecodeError as e:
+                # Try to fix incomplete JSON by closing brackets/braces
+                if "Unterminated string" in str(e) or "Expecting" in str(e):
+                    print("[AUDIT] WARNING: JSON appears incomplete. Attempting to fix...")
+                    try:
+                        # Count open/close brackets and braces
+                        open_braces = json_str.count('{')
+                        close_braces = json_str.count('}')
+                        open_brackets = json_str.count('[')
+                        close_brackets = json_str.count(']')
+                        
+                        # Try to close incomplete JSON
+                        fixed_text = json_str.rstrip().rstrip(',').rstrip()
+                        if open_braces > close_braces:
+                            fixed_text += '\n' + '}' * (open_braces - close_braces)
+                        if open_brackets > close_brackets:
+                            fixed_text += '\n' + ']' * (open_brackets - close_brackets)
+                        
+                        issues = json.loads(fixed_text)
+                        print("[AUDIT] Successfully parsed after fixing incomplete JSON")
+                        # Continue with normal processing
+                        if isinstance(issues, list):
+                            valid_issues = []
+                            for item in issues:
+                                if isinstance(item, dict) and any(key in item for key in ["method", "line_number", "issue_description"]):
+                                    valid_issues.append(item)
+                            if valid_issues:
+                                print(f"[AUDIT] Successfully found {len(valid_issues)} issue(s)")
+                                return valid_issues
+                            else:
+                                print("[AUDIT] No security issues found - code is safe")
+                                return []
+                        elif isinstance(issues, dict):
+                            # Handle dict as before
+                            if "issues" in issues and isinstance(issues["issues"], list):
+                                print(f"[AUDIT] Successfully found {len(issues['issues'])} issue(s)")
+                                return issues["issues"]
+                            elif any(key in issues for key in ["method", "line_number", "issue_description"]):
+                                print("[AUDIT] Successfully found 1 issue")
+                                return [issues]
+                            else:
+                                print("[AUDIT] No security issues found - code is safe")
+                                return []
+                    except Exception as e2:
+                        print(f"[AUDIT] Failed to fix JSON: {e2}")
+                
                 # If JSON parsing fails, check if it's a text explanation
                 if "no issues" in response_text.lower() or "safe" in response_text.lower():
                     print("[AUDIT] No security issues found - code is safe")
                     return []
+                
                 print(f"[AUDIT] ERROR: Failed to parse JSON response: {e}")
-                print(f"[AUDIT] Response text: {response_text[:500]}")
+                print(f"[AUDIT] JSON string length: {len(json_str) if json_str else 0} characters")
+                print(f"[AUDIT] JSON string (first 1000 chars): {json_str[:1000] if json_str else 'None'}")
+                if json_str and len(json_str) > 1000:
+                    print(f"[AUDIT] JSON string (last 500 chars): {json_str[-500:]}")
+                print(f"[AUDIT] Full response text (first 500 chars): {response_text[:500]}")
                 raise ValueError(f"LLM response is not valid JSON: {e}")
 
         except Exception as e:

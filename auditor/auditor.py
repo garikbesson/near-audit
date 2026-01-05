@@ -65,7 +65,7 @@ class CodeAuditor:
             # Try to find concept file with .md or .json extension
             md_path = os.path.join(self.concepts_dir, f"{concept_name}.md")
             json_path = os.path.join(self.concepts_dir, f"{concept_name}.json")
-            
+
             if os.path.exists(md_path):
                 return [(concept_name, md_path)]
             elif os.path.exists(json_path):
@@ -123,7 +123,7 @@ class CodeAuditor:
         Convert JSON concept file to readable text format for LLM.
         """
         lines = []
-        
+
         # Add concept name
         concept_name = json_data.get('concept', 'unknown')
         lines.append(f"# {concept_name.upper()}")
@@ -185,10 +185,10 @@ class CodeAuditor:
         return "\n".join(lines)
 
     def analyze_code_with_concept(
-        self, 
-        code: str, 
-        file_path: str, 
-        concept_name: str, 
+        self,
+        code: str,
+        file_path: str,
+        concept_name: str,
         concept_content: str
     ) -> List[Dict[str, Any]]:
         """
@@ -344,13 +344,13 @@ Return ONLY valid JSON array, no additional text or explanation."""
                     response_text += chunk.choices[0].delta.content
                 if chunk.choices[0].finish_reason:
                     finish_reason = chunk.choices[0].finish_reason
-            
+
             response_text = response_text.strip()
-            
+
             # Check if response was truncated
             if finish_reason == "length":
                 print("[PASS 1] WARNING: Response was truncated. Results may be incomplete.")
-            
+
             print("[PASS 1] Received response, parsing locations...")
             print(f"[PASS 1] Raw response (first 500 chars): {response_text[:500]}")
             locations = self._parse_locations_response(response_text)
@@ -591,13 +591,13 @@ Return ONLY valid JSON, no additional text."""
                     response_text += chunk.choices[0].delta.content
                 if chunk.choices[0].finish_reason:
                     finish_reason = chunk.choices[0].finish_reason
-            
+
             response_text = response_text.strip()
-            
+
             # Check if response was truncated
             if finish_reason == "length":
                 print(f"[PASS 2] Analysis {analysis_label}: WARNING: Response was truncated. Results may be incomplete.")
-            
+
             print(f"[PASS 2] Analysis {analysis_label}: Received response, parsing...")
             print(f"[PASS 2] Analysis {analysis_label}: Raw response (first 500 chars): {response_text[:500]}")
             issues = self._parse_response(response_text)
@@ -779,11 +779,11 @@ Return ONLY valid JSON, no additional text."""
             )
 
             response_text = response.choices[0].message.content.strip()
-            
+
             # Check if response was truncated
             if finish_reason == "length":
                 print("[PASS 2] Self-consistency: WARNING: Response was truncated. Results may be incomplete.")
-            
+
             print("[PASS 2] Self-consistency: Received reconciliation response")
             print(f"[PASS 2] Self-consistency: Raw response (first 500 chars): {response_text[:500]}")
             reconciled_issues = self._parse_response(response_text)
@@ -951,7 +951,7 @@ Return ONLY valid JSON, no additional text."""
         if not response_text or not response_text.strip():
             print("[PASS 2] WARNING: Empty response received")
             return []
-        
+
         # Try to find JSON in code blocks first
         json_match = re.search(r'```(?:json)?\s*(\[.*?\])\s*```', response_text, re.DOTALL)
         if json_match:
@@ -1279,19 +1279,19 @@ Do NOT analyze security yet.
                     response_text += chunk.choices[0].delta.content
                 if chunk.choices[0].finish_reason:
                     finish_reason = chunk.choices[0].finish_reason
-            
+
             response_text = response_text.strip()
-            
+
             # Log full LLM response before parsing
             print(f"[INDEX] Full LLM response ({len(response_text)} characters):")
             print("=" * 80)
             print(response_text)
             print("=" * 80)
-            
+
             # Check if response was truncated
             if finish_reason == "length":
                 print("[INDEX] WARNING: Response was truncated. Attempting to parse partial JSON...")
-            
+
             # Try to extract JSON from response
             # Remove markdown code blocks if present
             if "```json" in response_text:
@@ -1315,20 +1315,20 @@ Do NOT analyze security yet.
                         close_braces = response_text.count('}')
                         open_brackets = response_text.count('[')
                         close_brackets = response_text.count(']')
-                        
+
                         # Try to close incomplete JSON
                         fixed_text = response_text
                         if open_braces > close_braces:
                             fixed_text += '\n' + '}' * (open_braces - close_braces)
                         if open_brackets > close_brackets:
                             fixed_text += '\n' + ']' * (open_brackets - close_brackets)
-                        
+
                         project_index = json.loads(fixed_text)
                         print("[INDEX] Successfully parsed project index (after fixing incomplete JSON)")
                         return project_index
                     except:
                         pass
-                
+
                 print(f"[INDEX] ERROR: Failed to parse JSON response: {e}")
                 print(f"[INDEX] Response length: {len(response_text)} characters")
                 print(f"[INDEX] Response text (first 1000 chars): {response_text[:1000]}")
@@ -1412,18 +1412,45 @@ Return a JSON array:
   }}
 ]
 
-Rules:
-- Only include relationships explicitly present in code.
-- If unsure, omit.
+CRITICAL RULES:
+1. Only include relationships where there is an EXPLICIT CALL in the source code.
+2. Look for actual method invocations like:
+   - self.method_name(...)
+   - Contract::method_name(...)
+   - Promise::then(..., "method_name", ...)
+   - ext_contract.method_name(...)
+3. Do NOT include relationships just because methods exist in the same file or project.
+4. Do NOT assume relationships based on method names or project index alone.
+5. If a method exists but is never called, do NOT include it in relationships.
+6. If unsure whether a relationship exists, OMIT it.
+7. Only include relationships you can see EXPLICITLY in the code provided above.
+
+Examples of what to INCLUDE:
+- Method A calls self.method_b() → include relationship A → B
+- Method A uses Promise::then(..., "callback_method", ...) → include relationship A → callback_method (type: promise_callback)
+- Method A calls ext_contract.method_b() → include relationship A → B (type: ext_contract_call)
+
+Examples of what to OMIT:
+- Method A and method B exist in same file but A never calls B → OMIT
+- Method A and method B have similar names but no actual call → OMIT
+- You think methods might be related but see no explicit call → OMIT
 """
 
         system_prompt = """SYSTEM:
 
 You are analyzing method relationships in a NEAR smart contract project.
 
-Only use the provided project index and source files.
+You MUST only identify relationships where there is an EXPLICIT METHOD CALL in the source code.
 
-Do NOT guess.
+You MUST NOT guess or assume relationships based on:
+- Method names
+- File structure
+- Project index
+- Similar functionality
+
+You MUST verify each relationship by finding the actual call in the code.
+
+If you cannot find an explicit call, DO NOT include the relationship.
 """
 
         # Send request to LLM
@@ -1450,19 +1477,19 @@ Do NOT guess.
                     response_text += chunk.choices[0].delta.content
                 if chunk.choices[0].finish_reason:
                     finish_reason = chunk.choices[0].finish_reason
-            
+
             response_text = response_text.strip()
-            
+
             # Log full LLM response before parsing
             print(f"[GRAPH] Full LLM response ({len(response_text)} characters):")
             print("=" * 80)
             print(response_text)
             print("=" * 80)
-            
+
             # Check if response was truncated
             if finish_reason == "length":
                 print("[GRAPH] WARNING: Response was truncated. Attempting to parse partial JSON...")
-            
+
             # Try to extract JSON from response
             # Remove markdown code blocks if present
             if "```json" in response_text:
@@ -1496,7 +1523,7 @@ Do NOT guess.
                                 return method_graph
                     except:
                         pass
-                
+
                 print(f"[GRAPH] ERROR: Failed to parse JSON response: {e}")
                 print(f"[GRAPH] Response length: {len(response_text)} characters")
                 print(f"[GRAPH] Response text (first 500 chars): {response_text[:500]}")
@@ -1527,7 +1554,7 @@ Do NOT guess.
         concepts = self.get_all_concept_files(concept_name)
         if not concepts:
             raise FileNotFoundError(f"Concept file not found: {concept_name}")
-        
+
         concept_name_found, concept_path = concepts[0]
         concept_content = self.read_concept_file(concept_path)
 
@@ -1551,32 +1578,80 @@ CALL_GRAPH:
 
 TASK:
 
-Identify which methods and files are relevant for analyzing
-security issues related to {concept_name_found}.
+Analyze the PROJECT_INDEX and CALL_GRAPH above to identify which methods and files are relevant for analyzing security issues related to {concept_name_found}.
 
-Use the concept documentation above to understand what security issues to look for.
+INSTRUCTIONS:
 
-Return JSON:
+1. Read the CONCEPT_DOCUMENTATION carefully to understand:
+   - What types of security vulnerabilities this concept addresses
+   - What patterns or code structures indicate potential vulnerabilities
+   - What methods or code sections are typically involved in these vulnerabilities
+
+2. Analyze the PROJECT_INDEX to find methods that:
+   - Match the vulnerability patterns described in the concept documentation
+   - Perform operations related to the security concerns mentioned in the documentation
+   - Have characteristics that make them relevant for this type of security analysis
+
+3. Use the CALL_GRAPH to identify:
+   - Methods that call other methods relevant to this security concept
+   - Callback relationships (promise_callback) that may be relevant
+   - Cross-contract calls (ext_contract_call) that may introduce vulnerabilities
+   - Methods that must be analyzed together due to their relationships
+
+4. For each relevant method, determine:
+   - The method name (from PROJECT_INDEX)
+   - The file where it's located (from PROJECT_INDEX)
+   - A brief reason why it's relevant based on the concept documentation
+   - Any related methods from CALL_GRAPH that must be analyzed together (use must_include field)
+
+5. Be comprehensive but accurate:
+   - Include all methods that match the patterns from the concept documentation
+   - Include methods that are called by or call relevant methods (from CALL_GRAPH)
+   - Do NOT include methods that are clearly unrelated to this security concept
+
+CRITICAL: You MUST return ONLY valid JSON. Do NOT include any explanatory text before or after the JSON.
+
+Return ONLY this JSON structure (no other text):
 
 {{
   "relevant_methods": [
     {{
-      "method": "withdraw",
+      "method": "method_name",
       "file": "src/lib.rs",
-      "reason": "...",
+      "reason": "Brief explanation why this method is relevant based on the concept documentation",
       "must_include": [
-        {{ "method": "on_withdraw_complete", "file": "src/callbacks.rs" }}
+        {{ "method": "related_method", "file": "src/callbacks.rs" }}
       ]
     }}
   ]
 }}
+
+If no relevant methods are found, return:
+{{
+  "relevant_methods": []
+}}
+
+IMPORTANT: Return ONLY the JSON object. Do NOT add any text before or after it.
 """
 
         system_prompt = """SYSTEM:
 
 You are selecting relevant code for a focused security analysis.
 
-Be conservative: include more rather than less.
+Your task is to identify methods that are relevant for analyzing a specific security concept.
+
+CRITICAL REQUIREMENTS:
+1. You MUST return ONLY valid JSON - no explanatory text, no markdown, no code blocks
+2. Your response must start with { and end with }
+3. Do NOT include any text before or after the JSON
+4. Do NOT wrap JSON in markdown code blocks
+5. Carefully read the CONCEPT_DOCUMENTATION to understand what patterns to look for
+6. Analyze the PROJECT_INDEX to find methods matching those patterns
+7. Use the CALL_GRAPH to identify related methods that should be analyzed together
+8. Be thorough: include all methods that match the vulnerability patterns from the documentation
+9. If you cannot find relevant methods, return {"relevant_methods": []}
+
+Be conservative: include more rather than less, but only methods that actually match the patterns described in the concept documentation.
 """
 
         # Send request to LLM
@@ -1603,29 +1678,53 @@ Be conservative: include more rather than less.
                     response_text += chunk.choices[0].delta.content
                 if chunk.choices[0].finish_reason:
                     finish_reason = chunk.choices[0].finish_reason
-            
+
             response_text = response_text.strip()
-            
+
             # Log full LLM response before parsing
             print(f"[RELEVANCE] Full LLM response ({len(response_text)} characters):")
             print("=" * 80)
             print(response_text)
             print("=" * 80)
-            
+
             # Check if response was truncated
             if finish_reason == "length":
                 print("[RELEVANCE] WARNING: Response was truncated. Attempting to parse partial JSON...")
-            
-            # Try to extract JSON from response
-            # Remove markdown code blocks if present
-            if "```json" in response_text:
-                response_text = response_text.split("```json")[1].split("```")[0].strip()
-            elif "```" in response_text:
-                response_text = response_text.split("```")[1].split("```")[0].strip()
+
+            # Try to extract JSON from response using more robust method
+            json_str = None
+
+            # First, try to find JSON in code blocks
+            json_match = re.search(r'```(?:json)?\s*(\{.*?\})\s*```', response_text, re.DOTALL)
+            if json_match:
+                json_str = json_match.group(1)
+                print("[RELEVANCE] Found JSON in code block")
+            else:
+                # Try to find JSON object - use brace counting to get complete JSON
+                brace_count = 0
+                start_idx = response_text.find('{')
+                if start_idx != -1:
+                    for i in range(start_idx, len(response_text)):
+                        if response_text[i] == '{':
+                            brace_count += 1
+                        elif response_text[i] == '}':
+                            brace_count -= 1
+                            if brace_count == 0:
+                                json_str = response_text[start_idx:i+1]
+                                print("[RELEVANCE] Found JSON object in response")
+                                break
+                    else:
+                        # No matching closing brace found - try to fix
+                        json_str = response_text[start_idx:]
+                        print("[RELEVANCE] No matching closing brace, attempting to fix...")
+                else:
+                    # Try to parse the whole response as JSON
+                    json_str = response_text
+                    print("[RELEVANCE] Attempting to parse entire response as JSON")
 
             # Parse JSON
             try:
-                relevant_methods = json.loads(response_text)
+                relevant_methods = json.loads(json_str)
                 if not isinstance(relevant_methods, dict):
                     raise ValueError("Response is not a JSON object")
                 print("[RELEVANCE] Successfully found relevant methods")
@@ -1635,20 +1734,24 @@ Be conservative: include more rather than less.
                 if "Unterminated string" in str(e) or "Expecting" in str(e):
                     print("[RELEVANCE] WARNING: JSON appears incomplete. Attempting to fix...")
                     try:
-                        open_braces = response_text.count('{')
-                        close_braces = response_text.count('}')
+                        open_braces = json_str.count('{')
+                        close_braces = json_str.count('}')
                         if open_braces > close_braces:
-                            fixed_text = response_text + '\n' + '}' * (open_braces - close_braces)
+                            fixed_text = json_str.rstrip().rstrip(',').rstrip()
+                            fixed_text += '\n' + '}' * (open_braces - close_braces)
                             relevant_methods = json.loads(fixed_text)
                             if isinstance(relevant_methods, dict):
                                 print("[RELEVANCE] Successfully found relevant methods (after fixing)")
                                 return relevant_methods
-                    except:
-                        pass
-                
+                    except Exception as e2:
+                        print(f"[RELEVANCE] Failed to fix JSON: {e2}")
+
                 print(f"[RELEVANCE] ERROR: Failed to parse JSON response: {e}")
-                print(f"[RELEVANCE] Response length: {len(response_text)} characters")
-                print(f"[RELEVANCE] Response text (first 500 chars): {response_text[:500]}")
+                print(f"[RELEVANCE] JSON string length: {len(json_str) if json_str else 0} characters")
+                print(f"[RELEVANCE] JSON string (first 1000 chars): {json_str[:1000] if json_str else 'None'}")
+                if json_str and len(json_str) > 1000:
+                    print(f"[RELEVANCE] JSON string (last 500 chars): {json_str[-500:]}")
+                print(f"[RELEVANCE] Full response text (first 500 chars): {response_text[:500]}")
                 raise ValueError(f"LLM response is not valid JSON: {e}")
 
         except Exception as e:
@@ -1676,7 +1779,7 @@ Be conservative: include more rather than less.
         concepts = self.get_all_concept_files(concept_name)
         if not concepts:
             raise FileNotFoundError(f"Concept file not found: {concept_name}")
-        
+
         concept_name_found, concept_path = concepts[0]
         concept_content = self.read_concept_file(concept_path)
 
@@ -1697,14 +1800,14 @@ Be conservative: include more rather than less.
         for rel_path in files_to_read:
             # Normalize the path - remove leading slashes and normalize separators
             rel_path_normalized = rel_path.lstrip('/').replace('\\', '/')
-            
+
             # Check if project_dir ends with a directory that's also in rel_path
             # For example: project_dir = ".../metapool/src", rel_path = "src/lib.rs"
             # We should use "lib.rs" instead
             project_dir_basename = os.path.basename(os.path.normpath(project_dir))
             if rel_path_normalized.startswith(project_dir_basename + '/'):
                 rel_path_normalized = rel_path_normalized[len(project_dir_basename) + 1:]
-            
+
             # Also try without the first directory component if it matches project_dir basename
             # For example: if rel_path = "src/lib.rs" and project_dir ends with "src", try "lib.rs"
             path_parts = rel_path_normalized.split('/')
@@ -1712,31 +1815,31 @@ Be conservative: include more rather than less.
                 rel_path_without_prefix = '/'.join(path_parts[1:])
             else:
                 rel_path_without_prefix = None
-            
+
             # Try multiple path combinations
             possible_paths = []
-            
+
             # Try with normalized path
             possible_paths.append(os.path.join(project_dir, rel_path_normalized))
-            
+
             # Try without prefix if applicable
             if rel_path_without_prefix:
                 possible_paths.append(os.path.join(project_dir, rel_path_without_prefix))
-            
+
             # Try original path
             possible_paths.append(os.path.join(project_dir, rel_path))
-            
+
             # Also try if rel_path is already absolute
             if os.path.isabs(rel_path):
                 possible_paths.insert(0, rel_path)
-            
+
             # Try to find file by checking each possible path
             found_path = None
             for path in possible_paths:
                 if os.path.exists(path) and os.path.isfile(path):
                     found_path = path
                     break
-            
+
             # If not found, search recursively in project_dir by filename
             if not found_path:
                 filename = os.path.basename(rel_path_normalized)
@@ -1747,7 +1850,7 @@ Be conservative: include more rather than less.
                     if filename in files:
                         found_path = os.path.join(root, filename)
                         break
-            
+
             if found_path:
                 try:
                     with open(found_path, 'r', encoding='utf-8') as f:
@@ -1832,66 +1935,93 @@ Do NOT analyze unrelated code.
                     response_text += chunk.choices[0].delta.content
                 if chunk.choices[0].finish_reason:
                     finish_reason = chunk.choices[0].finish_reason
-            
+
             response_text = response_text.strip()
-            
+
             # Log full LLM response before parsing
             print(f"[AUDIT] Full LLM response ({len(response_text)} characters):")
             print("=" * 80)
             print(response_text)
             print("=" * 80)
-            
+
             # Check if response was truncated
             if finish_reason == "length":
                 print("[AUDIT] WARNING: Response was truncated. Attempting to parse partial JSON...")
-            
+
             # Try to extract JSON from response using more robust method
             json_str = None
             
-            # First, try to find JSON in code blocks
-            json_match = re.search(r'```(?:json)?\s*(\[.*?\])\s*```', response_text, re.DOTALL)
-            if json_match:
-                json_str = json_match.group(1)
-                print("[AUDIT] Found JSON in code block")
-            else:
-                # Try to find JSON array - use bracket counting to get complete JSON
-                bracket_count = 0
-                start_idx = response_text.find('[')
-                if start_idx != -1:
-                    for i in range(start_idx, len(response_text)):
-                        if response_text[i] == '[':
+            # First, try to find JSON in markdown code blocks
+            # Look for ```json ... ``` or ``` ... ``` containing JSON
+            code_block_match = re.search(r'```(?:json)?\s*(.*?)\s*```', response_text, re.DOTALL)
+            if code_block_match:
+                code_block_content = code_block_match.group(1).strip()
+                # Try to extract JSON from code block (could be array or object)
+                if code_block_content.startswith('['):
+                    # It's a JSON array - use bracket counting
+                    bracket_count = 0
+                    for i, char in enumerate(code_block_content):
+                        if char == '[':
                             bracket_count += 1
-                        elif response_text[i] == ']':
+                        elif char == ']':
                             bracket_count -= 1
                             if bracket_count == 0:
-                                json_str = response_text[start_idx:i+1]
-                                print("[AUDIT] Found JSON array in response")
+                                json_str = code_block_content[:i+1]
+                                print("[AUDIT] Found JSON array in code block")
                                 break
-                    else:
-                        # No matching closing bracket found - try to fix
-                        json_str = response_text[start_idx:]
-                        print("[AUDIT] No matching closing bracket, attempting to fix...")
-                else:
-                    # Try to find JSON object instead
+                elif code_block_content.startswith('{'):
+                    # It's a JSON object - use brace counting
                     brace_count = 0
-                    start_idx = response_text.find('{')
+                    for i, char in enumerate(code_block_content):
+                        if char == '{':
+                            brace_count += 1
+                        elif char == '}':
+                            brace_count -= 1
+                            if brace_count == 0:
+                                json_str = code_block_content[:i+1]
+                                print("[AUDIT] Found JSON object in code block")
+                                break
+            
+            # If not found in code blocks, try to find JSON directly in response
+            if not json_str:
+                    # Try to find JSON array - use bracket counting to get complete JSON
+                    bracket_count = 0
+                    start_idx = response_text.find('[')
                     if start_idx != -1:
                         for i in range(start_idx, len(response_text)):
-                            if response_text[i] == '{':
-                                brace_count += 1
-                            elif response_text[i] == '}':
-                                brace_count -= 1
-                                if brace_count == 0:
+                            if response_text[i] == '[':
+                                bracket_count += 1
+                            elif response_text[i] == ']':
+                                bracket_count -= 1
+                                if bracket_count == 0:
                                     json_str = response_text[start_idx:i+1]
-                                    print("[AUDIT] Found JSON object in response")
+                                    print("[AUDIT] Found JSON array in response")
                                     break
                         else:
+                            # No matching closing bracket found - try to fix
                             json_str = response_text[start_idx:]
-                            print("[AUDIT] No matching closing brace, attempting to fix...")
+                            print("[AUDIT] No matching closing bracket, attempting to fix...")
                     else:
-                        # Try to parse the whole response as JSON
-                        json_str = response_text
-                        print("[AUDIT] Attempting to parse entire response as JSON")
+                        # Try to find JSON object instead
+                        brace_count = 0
+                        start_idx = response_text.find('{')
+                        if start_idx != -1:
+                            for i in range(start_idx, len(response_text)):
+                                if response_text[i] == '{':
+                                    brace_count += 1
+                                elif response_text[i] == '}':
+                                    brace_count -= 1
+                                    if brace_count == 0:
+                                        json_str = response_text[start_idx:i+1]
+                                        print("[AUDIT] Found JSON object in response")
+                                        break
+                            else:
+                                json_str = response_text[start_idx:]
+                                print("[AUDIT] No matching closing brace, attempting to fix...")
+                        else:
+                            # Try to parse the whole response as JSON
+                            json_str = response_text
+                            print("[AUDIT] Attempting to parse entire response as JSON")
 
             # Parse JSON
             try:
@@ -1948,14 +2078,14 @@ Do NOT analyze unrelated code.
                         close_braces = json_str.count('}')
                         open_brackets = json_str.count('[')
                         close_brackets = json_str.count(']')
-                        
+
                         # Try to close incomplete JSON
                         fixed_text = json_str.rstrip().rstrip(',').rstrip()
                         if open_braces > close_braces:
                             fixed_text += '\n' + '}' * (open_braces - close_braces)
                         if open_brackets > close_brackets:
                             fixed_text += '\n' + ']' * (open_brackets - close_brackets)
-                        
+
                         issues = json.loads(fixed_text)
                         print("[AUDIT] Successfully parsed after fixing incomplete JSON")
                         # Continue with normal processing
@@ -1983,18 +2113,18 @@ Do NOT analyze unrelated code.
                                 return []
                     except Exception as e2:
                         print(f"[AUDIT] Failed to fix JSON: {e2}")
-                
+
                 # If JSON parsing fails, check if it's a text explanation
                 if "no issues" in response_text.lower() or "safe" in response_text.lower():
                     print("[AUDIT] No security issues found - code is safe")
                     return []
-                
+
                 print(f"[AUDIT] ERROR: Failed to parse JSON response: {e}")
                 print(f"[AUDIT] JSON string length: {len(json_str) if json_str else 0} characters")
                 print(f"[AUDIT] JSON string (first 1000 chars): {json_str[:1000] if json_str else 'None'}")
                 if json_str and len(json_str) > 1000:
                     print(f"[AUDIT] JSON string (last 500 chars): {json_str[-500:]}")
-                print(f"[AUDIT] Full response text (first 500 chars): {response_text[:500]}")
+                print(f"[AUDIT] Full response text (first 500 chars): {response_text}")
                 raise ValueError(f"LLM response is not valid JSON: {e}")
 
         except Exception as e:

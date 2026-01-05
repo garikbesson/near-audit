@@ -1227,7 +1227,9 @@ For each Rust file, identify:
 
 - whether the file performs cross-contract calls
 
-Return ONLY JSON in the following format:
+CRITICAL: You MUST return ONLY valid JSON. Do NOT include any explanatory text, markdown formatting, code blocks, or additional commentary before or after the JSON.
+
+Return ONLY this JSON structure (no other text):
 
 {{
   "files": {{
@@ -1240,6 +1242,11 @@ Return ONLY JSON in the following format:
     }}
   }}
 }}
+
+DO NOT wrap the JSON in markdown code blocks (```json or ```).
+DO NOT add any text before or after the JSON.
+DO NOT include explanations, analysis, or commentary outside the JSON structure.
+Return ONLY the JSON object, starting with {{ and ending with }}.
 """
 
         system_prompt = """SYSTEM:
@@ -1253,6 +1260,13 @@ You can only use the files explicitly provided below.
 Your task is to build a structured project index.
 
 Do NOT analyze security yet.
+
+CRITICAL OUTPUT REQUIREMENT:
+- You MUST return ONLY valid JSON.
+- Do NOT include any text, explanations, markdown, or code blocks outside the JSON.
+- Your response must start with { and end with }.
+- No markdown formatting, no code blocks, no explanatory text.
+- Return pure JSON only.
 """
 
         # Send request to LLM
@@ -1292,16 +1306,66 @@ Do NOT analyze security yet.
             if finish_reason == "length":
                 print("[INDEX] WARNING: Response was truncated. Attempting to parse partial JSON...")
 
-            # Try to extract JSON from response
-            # Remove markdown code blocks if present
-            if "```json" in response_text:
-                response_text = response_text.split("```json")[1].split("```")[0].strip()
-            elif "```" in response_text:
-                response_text = response_text.split("```")[1].split("```")[0].strip()
+            # Try to extract JSON from response using more robust method
+            json_str = None
+
+            # First, check if response starts directly with JSON (ideal case)
+            response_trimmed = response_text.strip()
+            if response_trimmed.startswith('{'):
+                # Response starts with JSON object - use brace counting
+                brace_count = 0
+                for i, char in enumerate(response_trimmed):
+                    if char == '{':
+                        brace_count += 1
+                    elif char == '}':
+                        brace_count -= 1
+                        if brace_count == 0:
+                            json_str = response_trimmed[:i+1]
+                            print("[INDEX] Found JSON object at start of response")
+                            break
+
+            # If not found at start, try to find JSON in markdown code blocks
+            if not json_str:
+                code_block_match = re.search(r'```(?:json)?\s*(.*?)\s*```', response_text, re.DOTALL)
+                if code_block_match:
+                    code_block_content = code_block_match.group(1).strip()
+                    if code_block_content.startswith('{'):
+                        # It's a JSON object - use brace counting
+                        brace_count = 0
+                        for i, char in enumerate(code_block_content):
+                            if char == '{':
+                                brace_count += 1
+                            elif char == '}':
+                                brace_count -= 1
+                                if brace_count == 0:
+                                    json_str = code_block_content[:i+1]
+                                    print("[INDEX] Found JSON object in code block")
+                                    break
+
+            # If not found in code blocks, try to find JSON anywhere in response
+            if not json_str:
+                brace_count = 0
+                start_idx = response_text.find('{')
+                if start_idx != -1:
+                    for i in range(start_idx, len(response_text)):
+                        if response_text[i] == '{':
+                            brace_count += 1
+                        elif response_text[i] == '}':
+                            brace_count -= 1
+                            if brace_count == 0:
+                                json_str = response_text[start_idx:i+1]
+                                print("[INDEX] Found JSON object in response")
+                                break
+                    else:
+                        json_str = response_text[start_idx:]
+                        print("[INDEX] No matching closing brace, attempting to fix...")
+                else:
+                    json_str = response_text
+                    print("[INDEX] Attempting to parse entire response as JSON")
 
             # Parse JSON
             try:
-                project_index = json.loads(response_text)
+                project_index = json.loads(json_str)
                 print("[INDEX] Successfully parsed project index")
                 return project_index
             except json.JSONDecodeError as e:
@@ -1311,13 +1375,13 @@ Do NOT analyze security yet.
                     # Try to close the JSON structure
                     try:
                         # Count open/close braces
-                        open_braces = response_text.count('{')
-                        close_braces = response_text.count('}')
-                        open_brackets = response_text.count('[')
-                        close_brackets = response_text.count(']')
+                        open_braces = json_str.count('{')
+                        close_braces = json_str.count('}')
+                        open_brackets = json_str.count('[')
+                        close_brackets = json_str.count(']')
 
                         # Try to close incomplete JSON
-                        fixed_text = response_text
+                        fixed_text = json_str.rstrip().rstrip(',').rstrip()
                         if open_braces > close_braces:
                             fixed_text += '\n' + '}' * (open_braces - close_braces)
                         if open_brackets > close_brackets:
@@ -1326,14 +1390,15 @@ Do NOT analyze security yet.
                         project_index = json.loads(fixed_text)
                         print("[INDEX] Successfully parsed project index (after fixing incomplete JSON)")
                         return project_index
-                    except:
-                        pass
+                    except Exception as e2:
+                        print(f"[INDEX] Failed to fix JSON: {e2}")
 
                 print(f"[INDEX] ERROR: Failed to parse JSON response: {e}")
-                print(f"[INDEX] Response length: {len(response_text)} characters")
-                print(f"[INDEX] Response text (first 1000 chars): {response_text[:1000]}")
-                if len(response_text) > 1000:
-                    print(f"[INDEX] Response text (last 500 chars): {response_text[-500:]}")
+                print(f"[INDEX] JSON string length: {len(json_str) if json_str else 0} characters")
+                print(f"[INDEX] JSON string (first 1000 chars): {json_str[:1000] if json_str else 'None'}")
+                if json_str and len(json_str) > 1000:
+                    print(f"[INDEX] JSON string (last 500 chars): {json_str[-500:]}")
+                print(f"[INDEX] Full response text (first 500 chars): {response_text[:500]}")
                 raise ValueError(f"LLM response is not valid JSON: {e}")
 
         except Exception as e:
@@ -1400,7 +1465,9 @@ FILES:
 
 Identify relationships between methods across files.
 
-Return a JSON array:
+CRITICAL: You MUST return ONLY valid JSON. Do NOT include any explanatory text, markdown formatting, code blocks, or additional commentary before or after the JSON.
+
+Return ONLY a JSON array (no other text):
 
 [
   {{
@@ -1434,6 +1501,11 @@ Examples of what to OMIT:
 - Method A and method B exist in same file but A never calls B → OMIT
 - Method A and method B have similar names but no actual call → OMIT
 - You think methods might be related but see no explicit call → OMIT
+
+DO NOT wrap the JSON in markdown code blocks (```json or ```).
+DO NOT add any text before or after the JSON.
+DO NOT include explanations, analysis, or commentary outside the JSON structure.
+Return ONLY the JSON array, starting with [ and ending with ].
 """
 
         system_prompt = """SYSTEM:
@@ -1451,6 +1523,13 @@ You MUST NOT guess or assume relationships based on:
 You MUST verify each relationship by finding the actual call in the code.
 
 If you cannot find an explicit call, DO NOT include the relationship.
+
+CRITICAL OUTPUT REQUIREMENT:
+- You MUST return ONLY valid JSON.
+- Do NOT include any text, explanations, markdown, or code blocks outside the JSON.
+- Your response must start with [ and end with ].
+- No markdown formatting, no code blocks, no explanatory text.
+- Return pure JSON only.
 """
 
         # Send request to LLM
@@ -1490,16 +1569,66 @@ If you cannot find an explicit call, DO NOT include the relationship.
             if finish_reason == "length":
                 print("[GRAPH] WARNING: Response was truncated. Attempting to parse partial JSON...")
 
-            # Try to extract JSON from response
-            # Remove markdown code blocks if present
-            if "```json" in response_text:
-                response_text = response_text.split("```json")[1].split("```")[0].strip()
-            elif "```" in response_text:
-                response_text = response_text.split("```")[1].split("```")[0].strip()
+            # Try to extract JSON from response using more robust method
+            json_str = None
+
+            # First, check if response starts directly with JSON (ideal case)
+            response_trimmed = response_text.strip()
+            if response_trimmed.startswith('['):
+                # Response starts with JSON array - use bracket counting
+                bracket_count = 0
+                for i, char in enumerate(response_trimmed):
+                    if char == '[':
+                        bracket_count += 1
+                    elif char == ']':
+                        bracket_count -= 1
+                        if bracket_count == 0:
+                            json_str = response_trimmed[:i+1]
+                            print("[GRAPH] Found JSON array at start of response")
+                            break
+
+            # If not found at start, try to find JSON in markdown code blocks
+            if not json_str:
+                code_block_match = re.search(r'```(?:json)?\s*(.*?)\s*```', response_text, re.DOTALL)
+                if code_block_match:
+                    code_block_content = code_block_match.group(1).strip()
+                    if code_block_content.startswith('['):
+                        # It's a JSON array - use bracket counting
+                        bracket_count = 0
+                        for i, char in enumerate(code_block_content):
+                            if char == '[':
+                                bracket_count += 1
+                            elif char == ']':
+                                bracket_count -= 1
+                                if bracket_count == 0:
+                                    json_str = code_block_content[:i+1]
+                                    print("[GRAPH] Found JSON array in code block")
+                                    break
+
+            # If not found in code blocks, try to find JSON anywhere in response
+            if not json_str:
+                bracket_count = 0
+                start_idx = response_text.find('[')
+                if start_idx != -1:
+                    for i in range(start_idx, len(response_text)):
+                        if response_text[i] == '[':
+                            bracket_count += 1
+                        elif response_text[i] == ']':
+                            bracket_count -= 1
+                            if bracket_count == 0:
+                                json_str = response_text[start_idx:i+1]
+                                print("[GRAPH] Found JSON array in response")
+                                break
+                    else:
+                        json_str = response_text[start_idx:]
+                        print("[GRAPH] No matching closing bracket, attempting to fix...")
+                else:
+                    json_str = response_text
+                    print("[GRAPH] Attempting to parse entire response as JSON")
 
             # Parse JSON
             try:
-                method_graph = json.loads(response_text)
+                method_graph = json.loads(json_str)
                 if not isinstance(method_graph, list):
                     # If LLM returned object with array inside, extract it
                     if isinstance(method_graph, dict) and "relationships" in method_graph:
@@ -1513,20 +1642,35 @@ If you cannot find an explicit call, DO NOT include the relationship.
                 if "Unterminated string" in str(e) or "Expecting" in str(e):
                     print("[GRAPH] WARNING: JSON appears incomplete. Attempting to fix...")
                     try:
-                        open_brackets = response_text.count('[')
-                        close_brackets = response_text.count(']')
+                        open_brackets = json_str.count('[')
+                        close_brackets = json_str.count(']')
+                        open_braces = json_str.count('{')
+                        close_braces = json_str.count('}')
+
+                        fixed_text = json_str.rstrip().rstrip(',').rstrip()
                         if open_brackets > close_brackets:
-                            fixed_text = response_text + '\n' + ']' * (open_brackets - close_brackets)
-                            method_graph = json.loads(fixed_text)
+                            fixed_text += '\n' + ']' * (open_brackets - close_brackets)
+                        if open_braces > close_braces:
+                            fixed_text += '\n' + '}' * (open_braces - close_braces)
+
+                        method_graph = json.loads(fixed_text)
+                        if isinstance(method_graph, list):
+                            print(f"[GRAPH] Successfully parsed {len(method_graph)} relationship(s) (after fixing)")
+                            return method_graph
+                        elif isinstance(method_graph, dict) and "relationships" in method_graph:
+                            method_graph = method_graph["relationships"]
                             if isinstance(method_graph, list):
                                 print(f"[GRAPH] Successfully parsed {len(method_graph)} relationship(s) (after fixing)")
                                 return method_graph
-                    except:
-                        pass
+                    except Exception as e2:
+                        print(f"[GRAPH] Failed to fix JSON: {e2}")
 
                 print(f"[GRAPH] ERROR: Failed to parse JSON response: {e}")
-                print(f"[GRAPH] Response length: {len(response_text)} characters")
-                print(f"[GRAPH] Response text (first 500 chars): {response_text[:500]}")
+                print(f"[GRAPH] JSON string length: {len(json_str) if json_str else 0} characters")
+                print(f"[GRAPH] JSON string (first 1000 chars): {json_str[:1000] if json_str else 'None'}")
+                if json_str and len(json_str) > 1000:
+                    print(f"[GRAPH] JSON string (last 500 chars): {json_str[-500:]}")
+                print(f"[GRAPH] Full response text (first 500 chars): {response_text[:500]}")
                 raise ValueError(f"LLM response is not valid JSON: {e}")
 
         except Exception as e:
@@ -1694,13 +1838,41 @@ Be conservative: include more rather than less, but only methods that actually m
             # Try to extract JSON from response using more robust method
             json_str = None
 
-            # First, try to find JSON in code blocks
-            json_match = re.search(r'```(?:json)?\s*(\{.*?\})\s*```', response_text, re.DOTALL)
-            if json_match:
-                json_str = json_match.group(1)
-                print("[RELEVANCE] Found JSON in code block")
-            else:
-                # Try to find JSON object - use brace counting to get complete JSON
+            # First, check if response starts directly with JSON (ideal case)
+            response_trimmed = response_text.strip()
+            if response_trimmed.startswith('{'):
+                # Response starts with JSON object - use brace counting
+                brace_count = 0
+                for i, char in enumerate(response_trimmed):
+                    if char == '{':
+                        brace_count += 1
+                    elif char == '}':
+                        brace_count -= 1
+                        if brace_count == 0:
+                            json_str = response_trimmed[:i+1]
+                            print("[RELEVANCE] Found JSON object at start of response")
+                            break
+
+            # If not found at start, try to find JSON in markdown code blocks
+            if not json_str:
+                code_block_match = re.search(r'```(?:json)?\s*(.*?)\s*```', response_text, re.DOTALL)
+                if code_block_match:
+                    code_block_content = code_block_match.group(1).strip()
+                    if code_block_content.startswith('{'):
+                        # It's a JSON object - use brace counting
+                        brace_count = 0
+                        for i, char in enumerate(code_block_content):
+                            if char == '{':
+                                brace_count += 1
+                            elif char == '}':
+                                brace_count -= 1
+                                if brace_count == 0:
+                                    json_str = code_block_content[:i+1]
+                                    print("[RELEVANCE] Found JSON object in code block")
+                                    break
+
+            # If not found in code blocks, try to find JSON anywhere in response
+            if not json_str:
                 brace_count = 0
                 start_idx = response_text.find('{')
                 if start_idx != -1:
@@ -1884,20 +2056,28 @@ FILES:
 
 {files_section}TASK:
 
-Analyze the combined behavior of these methods.
+Analyze the combined behavior of these methods for security vulnerabilities.
 
-For each issue found, return:
+CRITICAL: You MUST return ONLY valid JSON. Do NOT include any explanatory text, markdown formatting, code blocks, or additional commentary before or after the JSON.
 
-{{
-  "method": "...",
-  "file": "...",
-  "line_number": ...,
-  "issue_description": "...",
-  "recommendation": "..."
-}}
+If issues are found, return a JSON array:
+[
+  {{
+    "method": "method_name",
+    "file": "src/lib.rs",
+    "line_number": 42,
+    "issue_description": "Description of the security issue",
+    "recommendation": "How to fix the issue"
+  }}
+]
 
-If no issues are found:
-- Explicitly explain why the combined behavior is safe.
+If NO issues are found, return an empty JSON array:
+[]
+
+DO NOT wrap the JSON in markdown code blocks (```json or ```).
+DO NOT add any text before or after the JSON.
+DO NOT include explanations, analysis, or commentary outside the JSON structure.
+Return ONLY the JSON array, starting with [ and ending with ].
 """
 
         system_prompt = """SYSTEM:
@@ -1909,6 +2089,13 @@ You MUST analyze interactions across multiple files.
 You MUST consider async boundaries and callbacks.
 
 Do NOT analyze unrelated code.
+
+CRITICAL OUTPUT REQUIREMENT:
+- You MUST return ONLY valid JSON.
+- Do NOT include any text, explanations, markdown, or code blocks outside the JSON.
+- Your response must start with [ or { and end with ] or }.
+- No markdown formatting, no code blocks, no explanatory text.
+- Return pure JSON only.
 """
 
         # Send request to LLM
@@ -1950,39 +2137,67 @@ Do NOT analyze unrelated code.
 
             # Try to extract JSON from response using more robust method
             json_str = None
-            
-            # First, try to find JSON in markdown code blocks
-            # Look for ```json ... ``` or ``` ... ``` containing JSON
-            code_block_match = re.search(r'```(?:json)?\s*(.*?)\s*```', response_text, re.DOTALL)
-            if code_block_match:
-                code_block_content = code_block_match.group(1).strip()
-                # Try to extract JSON from code block (could be array or object)
-                if code_block_content.startswith('['):
-                    # It's a JSON array - use bracket counting
+
+            # First, check if response starts directly with JSON (ideal case)
+            response_trimmed = response_text.strip()
+            if response_trimmed.startswith('[') or response_trimmed.startswith('{'):
+                # Response starts with JSON - try to parse it directly
+                # Use bracket/brace counting to find the complete JSON
+                if response_trimmed.startswith('['):
                     bracket_count = 0
-                    for i, char in enumerate(code_block_content):
+                    for i, char in enumerate(response_trimmed):
                         if char == '[':
                             bracket_count += 1
                         elif char == ']':
                             bracket_count -= 1
                             if bracket_count == 0:
-                                json_str = code_block_content[:i+1]
-                                print("[AUDIT] Found JSON array in code block")
+                                json_str = response_trimmed[:i+1]
+                                print("[AUDIT] Found JSON array at start of response")
                                 break
-                elif code_block_content.startswith('{'):
-                    # It's a JSON object - use brace counting
+                elif response_trimmed.startswith('{'):
                     brace_count = 0
-                    for i, char in enumerate(code_block_content):
+                    for i, char in enumerate(response_trimmed):
                         if char == '{':
                             brace_count += 1
                         elif char == '}':
                             brace_count -= 1
                             if brace_count == 0:
-                                json_str = code_block_content[:i+1]
-                                print("[AUDIT] Found JSON object in code block")
+                                json_str = response_trimmed[:i+1]
+                                print("[AUDIT] Found JSON object at start of response")
                                 break
-            
-            # If not found in code blocks, try to find JSON directly in response
+
+            # If not found at start, try to find JSON in markdown code blocks
+            if not json_str:
+                code_block_match = re.search(r'```(?:json)?\s*(.*?)\s*```', response_text, re.DOTALL)
+                if code_block_match:
+                    code_block_content = code_block_match.group(1).strip()
+                    # Try to extract JSON from code block (could be array or object)
+                    if code_block_content.startswith('['):
+                        # It's a JSON array - use bracket counting
+                        bracket_count = 0
+                        for i, char in enumerate(code_block_content):
+                            if char == '[':
+                                bracket_count += 1
+                            elif char == ']':
+                                bracket_count -= 1
+                                if bracket_count == 0:
+                                    json_str = code_block_content[:i+1]
+                                    print("[AUDIT] Found JSON array in code block")
+                                    break
+                    elif code_block_content.startswith('{'):
+                        # It's a JSON object - use brace counting
+                        brace_count = 0
+                        for i, char in enumerate(code_block_content):
+                            if char == '{':
+                                brace_count += 1
+                            elif char == '}':
+                                brace_count -= 1
+                                if brace_count == 0:
+                                    json_str = code_block_content[:i+1]
+                                    print("[AUDIT] Found JSON object in code block")
+                                    break
+
+            # If not found in code blocks, try to find JSON anywhere in response
             if not json_str:
                     # Try to find JSON array - use bracket counting to get complete JSON
                     bracket_count = 0

@@ -15,10 +15,11 @@ import json
 import argparse
 from pathlib import Path
 from typing import Dict, List, Any
-from auditor.auditor import CodeAuditor
 
 # Add parent directory to path to import auditor
 sys.path.insert(0, str(Path(__file__).parent.parent))
+
+from auditor.auditor import CodeAuditor
 
 
 def load_metadata() -> Dict[str, Any]:
@@ -248,7 +249,7 @@ Examples:
         ]
         if not examples_to_run:
             print(f"ERROR: Project '{args.project}' not found in metadata.json")
-            print(f"\nAvailable projects:")
+            print("\nAvailable projects:")
             for ex in metadata["examples"]:
                 print(f"  - {ex['project']}")
             sys.exit(1)
@@ -333,7 +334,7 @@ Examples:
         print(f"Failed Projects: {', '.join(summary['failed_project_names'])}")
 
     if summary['successful_projects'] > 0:
-        print(f"\nOverall Metrics (aggregated across all projects):")
+        print("\nOverall Metrics (aggregated across all projects):")
         print(f"  Precision: {summary['overall_metrics']['precision']:.2%}")
         print(f"  Recall: {summary['overall_metrics']['recall']:.2%}")
         print(f"  F1 Score: {summary['overall_metrics']['f1_score']:.2%}")
@@ -343,7 +344,7 @@ Examples:
         print(f"  Total Detected: {summary['overall_metrics']['total_detected']}")
         print(f"  Total Expected: {summary['overall_metrics']['total_expected']}")
 
-        print(f"\nAverage Metrics (per-project averages):")
+        print("\nAverage Metrics (per-project averages):")
         print(f"  Precision: {summary['average_metrics']['precision']:.2%}")
         print(f"  Recall: {summary['average_metrics']['recall']:.2%}")
         print(f"  F1 Score: {summary['average_metrics']['f1_score']:.2%}")
